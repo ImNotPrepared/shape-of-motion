@@ -29,8 +29,6 @@ from flow3d.init_utils import (
     run_initial_optim,
     vis_init_params,
 )
-
-from flow3d.params import GaussianParams, MotionBases
 from flow3d.scene_model import SceneModel
 from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.trainer import Trainer
@@ -92,6 +90,25 @@ def main(cfgs):
 
       # if checkpoint exists
       ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
+      initialize_and_checkpoint_model(
+          cfg,
+          train_dataset,
+          device,
+          ckpt_path,
+          vis=cfg.vis_debug,
+          port=cfg.port,
+      )
+
+      trainer, start_epoch = Trainer.init_from_checkpoint(
+          ckpt_path,
+          device,
+          cfg.lr,
+          cfg.loss,
+          cfg.optim,
+          work_dir=cfg.work_dir,
+          port=cfg.port,
+      )
+
       train_loader = DataLoader(
           train_dataset,
           batch_size=cfg.batch_size,
@@ -100,56 +117,42 @@ def main(cfgs):
           collate_fn=BaseDataset.train_collate_fn,
       )
 
-      train_list.append((train_loader , train_loader, train_dataset))
 
+      validator = None
+      if (
+          train_video_view is not None
+          or val_img_dataset is not None
+          or val_kpt_dataset is not None
+      ):
+          validator = Validator(
+              model=trainer.model,
+              device=device,
+              train_loader=(
+                  DataLoader(train_video_view, batch_size=1) if train_video_view else None
+              ),
+              val_img_loader=(
+                  DataLoader(val_img_dataset, batch_size=1) if val_img_dataset else None
+              ),
+              val_kpt_loader=(
+                  DataLoader(val_kpt_dataset, batch_size=1) if val_kpt_dataset else None
+              ),
+              save_dir=cfg.work_dir,
+          )
+      train_list.append((trainer , train_loader, validator))
 
+    guru.info(f"Starting training from {trainer.global_step=}")
 
-    train_dataset_0 = train_list[0][-1]#.train_step(batch_0)
-    train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
-    train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
-    train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
-
-    debug=False
-
-
-    if debug:
-      initialize_and_checkpoint_model(
-          cfg,
-          [train_dataset_0],
-          device,
-          ckpt_path,
-          vis=cfg.vis_debug,
-          port=cfg.port,
-      )
-
-    else:
-
-      initialize_and_checkpoint_model(
-          cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3, ],
-          device,
-          ckpt_path,
-          vis=cfg.vis_debug,
-          port=cfg.port,
-      )
-
-    trainer, start_epoch = Trainer.init_from_checkpoint(
-        ckpt_path,
-        device,
-        cfg.lr,
-        cfg.loss,
-        cfg.optim,
-        work_dir=cfg.work_dir,
-        port=cfg.port,
-    )
-
+    trainer_0 = train_list[0][0]#.train_step(batch_0)
+    trainer_1 = train_list[1][0]#.train_step(batch_1)
+    trainer_2 = train_list[2][0]#.train_step(batch_2)
+    trainer_3 = train_list[3][0]#.train_step(batch_3)
 
     train_loader_0 = train_list[0][1]
     train_loader_1 = train_list[1][1]
     train_loader_2 = train_list[2][1]
     train_loader_3 = train_list[3][1]
 
-    guru.info(f"Starting training from {trainer.global_step=}")
+
     for epoch in (
         pbar := tqdm(
             range(start_epoch, cfg.num_epochs),
@@ -160,7 +163,11 @@ def main(cfgs):
         loss = 0
 
 
-        trainer.set_epoch(epoch)
+        trainer_0.set_epoch(epoch)
+        trainer_1.set_epoch(epoch)
+        trainer_2.set_epoch(epoch)
+        trainer_3.set_epoch(epoch)
+
 
         train_loaders = [train_loader_0, train_loader_1, train_loader_2, train_loader_3]
 
@@ -173,32 +180,26 @@ def main(cfgs):
             batch_2 = to_device(batch_2, device)
             batch_3 = to_device(batch_3, device)
 
-            
-
-            #loss_0 = trainer.train_step(batch_0)
-            #loss_1 = trainer.train_step(batch_1)
-            #loss_2 = trainer.train_step(batch_2)
-            #loss_3 = trainer.train_step(batch_3)
+            loss_0 = trainer_0.train_step(batch_0)
+            loss_1 = trainer_1.train_step(batch_1)
+            loss_2 = trainer_2.train_step(batch_2)
+            loss_3 = trainer_3.train_step(batch_3)
 
 
             #batch = to_device(batch, device)
             #loss = trainer.train_step(batch)
-            if debug:
-              loss = trainer.train_step([batch_0,])
 
-            else:
-              loss = trainer.train_step([batch_0, batch_1, batch_2, batch_3])#(loss_0 + loss_1 + loss_2 + loss_3) / 4
+            loss = (loss_0 + loss_1 + loss_2 + loss_3) / 4
             loss.backward()
-            trainer.op_af_bk()
 
-            #trainer_0.op_af_bk()
-            #trainer_1.op_af_bk()
-            #trainer_2.op_af_bk()
-            #trainer_3.op_af_bk()
+            trainer_0.op_af_bk()
+            trainer_1.op_af_bk()
+            trainer_2.op_af_bk()
+            trainer_3.op_af_bk()
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
-        '''for _, _, validator in train_list:
+        for _, _, validator in train_list:
           if validator is not None:
               if (epoch > 0 and epoch % cfg.validate_every == 0) or (
                   epoch == cfg.num_epochs - 1
@@ -208,7 +209,7 @@ def main(cfgs):
               if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
                   epoch == cfg.num_epochs - 1
               ):
-                  validator.save_train_videos(epoch)'''
+                  validator.save_train_videos(epoch)
 
 
 def initialize_and_checkpoint_model(
@@ -220,7 +221,7 @@ def initialize_and_checkpoint_model(
     port: int | None = None,
 ):
     if os.path.exists(ckpt_path):
-        guru.info(f"model checkpoint exists at {ckpt_pathq}")
+        guru.info(f"model checkpoint exists at {ckpt_path}")
         return
     
 
@@ -245,8 +246,7 @@ def initialize_and_checkpoint_model(
         w2cs = train_dataset.get_w2cs().to(device)
 
 
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=2)
-        #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
+        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
         fg_params_fuse.append(fg_params)
@@ -256,57 +256,12 @@ def initialize_and_checkpoint_model(
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
-    prefix="params."
+    fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
+    motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
+    bg_params_fuse = torch.cat(bg_params_fuse, dim=0)  # Flatten bg_params
 
-    fg_state_dict_fused = {} 
+    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fuse, motion_bases_fuse, bg_params_fuse)
 
-    for key in fg_params_fuse[0].params.keys():
-        fg_state_dict_fused[prefix+key] = torch.cat(
-            [fg_params.params[key] for fg_params in fg_params_fuse], dim=0
-        )
-
-    nummms0 = len(fg_params_fuse[0].params['motion_coefs'])
-    nummms1 = len(fg_params_fuse[1].params['motion_coefs'])
-    nummms2 = len(fg_params_fuse[2].params['motion_coefs'])
-    nummms3 = len(fg_params_fuse[3].params['motion_coefs'])
-    to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), 4*10))
-
-    ### N, B -> 4N, 4B 
-    to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-    to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-    to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-    to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
-
-
-    fg_state_dict_fused[prefix+'motion_coefs'] = to_init
-
-    bg_state_dict_fused = {} 
-    for key in bg_params_fuse[0].params.keys():
-        bg_state_dict_fused[prefix+key] = torch.cat(
-            [bg_params.params[key] for bg_params in bg_params_fuse], dim=0
-        )
-
-    #fg_params_fuse[0].scene_center
-    #for key in ['scene_center', 'scene_scale']:
-    #    fg_state_dict_fused[key] = torch.cat(
-    #        [fg_params[key] for fg_params in fg_params_fuse], dim=0
-    #    )
-        
-    motion_bases_state_dict_fused = {}
-    for key in motion_bases_fuse[0].params.keys():
-        motion_bases_state_dict_fused[prefix+key] = torch.cat([d.params[key] for d in motion_bases_fuse], dim=0)
-
-    fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
-    motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
-
-
-    #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
-    #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
-    #bg_params_fuse = torch.cat(bg_params_fuse, dim=0)  # Flatten bg_params
-
-    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)
-    print('SANITY_CCCCHECK', model.fg.get_coefs().shape, model.fg.get_colors().shape)
 
     guru.info(f"Saving initialization to {ckpt_path}")
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
