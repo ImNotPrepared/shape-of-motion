@@ -50,7 +50,8 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-        set_seed(42)
+set_seed(42)
+
 
 @dataclass
 class TrainConfig:
@@ -63,7 +64,7 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 100_000
+    num_fg: int = 40_000
     num_bg: int = 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
@@ -114,12 +115,11 @@ def main(cfgs):
     if debug:
       initialize_and_checkpoint_model(
           cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3 ],
+          [train_dataset_0],
           device,
           ckpt_path,
           vis=cfg.vis_debug,
           port=cfg.port,
-          debug=debug
       )
 
     else:
@@ -131,7 +131,6 @@ def main(cfgs):
           ckpt_path,
           vis=cfg.vis_debug,
           port=cfg.port,
-          debug=debug
       )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
@@ -174,14 +173,14 @@ def main(cfgs):
             batch_2 = to_device(batch_2, device)
             batch_3 = to_device(batch_3, device)
 
-            
             if debug:
-              loss = trainer.train_step([batch_0, batch_0, batch_0, batch_0])
+              loss = trainer.train_step([batch_0,])
 
             else:
               loss = trainer.train_step([batch_0, batch_1, batch_2, batch_3])#(loss_0 + loss_1 + loss_2 + loss_3) / 4
             loss.backward()
             trainer.op_af_bk()
+
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
@@ -193,7 +192,6 @@ def initialize_and_checkpoint_model(
     ckpt_path: str,
     vis: bool = False,
     port: int | None = None,
-    debug=False
 ):
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_pathq}")
@@ -208,7 +206,6 @@ def initialize_and_checkpoint_model(
 
     for train_dataset in train_datasets:
         # Initialize model from tracks
-
         fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
             train_dataset,
             cfg.num_fg,
@@ -228,14 +225,11 @@ def initialize_and_checkpoint_model(
         w2cs_fuse.append(w2cs)
         fg_params_fuse.append(fg_params)
         motion_bases_fuse.append(motion_bases)
-
         bg_params_fuse.append(bg_params)
         
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
-
-
     prefix="params."
 
     fg_state_dict_fused = {} 
@@ -251,18 +245,11 @@ def initialize_and_checkpoint_model(
     nummms3 = len(fg_params_fuse[3].params['motion_coefs'])
     to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), 4*10))
 
-
-    if debug:
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
-
-    else: 
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
+    ### N, B -> 4N, 4B 
+    to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
+    to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
+    to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
+    to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
 
 
     fg_state_dict_fused[prefix+'motion_coefs'] = to_init
@@ -324,7 +311,7 @@ def init_model_from_tracks(
     guru.info(f"{cano_t=} {num_fg=} {num_bg=} {num_motion_bases=}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    motion_bases, motion_coefs, tracks_3d,  = init_motion_params_with_procrustes(
+    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
         tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
     )
     motion_bases = motion_bases.to(device)
@@ -353,8 +340,6 @@ def backup_code(work_dir):
 
 
 if __name__ == "__main__":
-    import wandb 
-    wandb.init()  
     config_1 = TrainConfig(
         work_dir="./outdir",
         data=CustomDataConfig(
@@ -396,3 +381,4 @@ if __name__ == "__main__":
         optim=tyro.cli(OptimizerConfig),
     )
     main([config_1, config_2, config_3, config_4])
+    #main(config_1, config_2, config_3, config_4)
