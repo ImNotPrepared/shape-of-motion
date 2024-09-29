@@ -188,7 +188,7 @@ def initialize_and_checkpoint_model(
     debug=False
 ):
     if os.path.exists(ckpt_path):
-        guru.info(f"model checkpoint exists at {ckpt_pathq}")
+        guru.info(f"model checkpoint exists at {ckpt_path}")
         return
     
 
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     import wandb 
     wandb.init()  
     config_1 = TrainConfig(
-        work_dir="./outdir",
+        work_dir="./outdir_single_da2_aligned_new_1",
         data=CustomDataConfig(
             seq_name="toy_512_1",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",

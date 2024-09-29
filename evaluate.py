@@ -279,7 +279,7 @@ if __name__ == "__main__":
     )
 
 
-    render_fig = RenderConfig(work_dir='outdir')
+    render_fig = RenderConfig(work_dir='outdir_duster_depth')
     main(render_fig, [config_1, config_2, config_3, config_4])
     
     # main(tyro.cli(RenderConfig), [config_1, config_2, config_3, config_4])

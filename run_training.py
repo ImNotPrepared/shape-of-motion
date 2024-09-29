@@ -196,7 +196,7 @@ def initialize_and_checkpoint_model(
     debug=False
 ):
     if os.path.exists(ckpt_path):
-        guru.info(f"model checkpoint exists at {ckpt_pathq}")
+        guru.info(f"model checkpoint exists at {ckpt_path}")
         return
     
 
@@ -249,7 +249,12 @@ def initialize_and_checkpoint_model(
     nummms1 = len(fg_params_fuse[1].params['motion_coefs'])
     nummms2 = len(fg_params_fuse[2].params['motion_coefs'])
     nummms3 = len(fg_params_fuse[3].params['motion_coefs'])
-    to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), 4*10))
+
+    base_nummms0 = fg_params_fuse[0].params['motion_coefs'].shape[1]
+    base_nummms1 = fg_params_fuse[1].params['motion_coefs'].shape[1]
+    base_nummms2 = fg_params_fuse[2].params['motion_coefs'].shape[1]
+    base_nummms3 = fg_params_fuse[3].params['motion_coefs'].shape[1]
+    to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), base_nummms0+base_nummms1+base_nummms2+base_nummms3))
 
 
     if debug:
@@ -259,10 +264,10 @@ def initialize_and_checkpoint_model(
       to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
 
     else: 
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
+      to_init[:nummms0, :base_nummms0] = fg_params_fuse[0].params['motion_coefs']
+      to_init[nummms0:nummms1+nummms0, base_nummms0:base_nummms0+base_nummms1] = fg_params_fuse[1].params['motion_coefs']
+      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, base_nummms0+base_nummms1:base_nummms0+base_nummms1+base_nummms2] = fg_params_fuse[2].params['motion_coefs']
+      to_init[nummms2+nummms1+nummms0:, base_nummms0+base_nummms1+base_nummms2:] = fg_params_fuse[3].params['motion_coefs']
 
 
     fg_state_dict_fused[prefix+'motion_coefs'] = to_init
@@ -352,11 +357,18 @@ def backup_code(work_dir):
             shutil.copytree(tracked_dir, osp.join(dst_dir, osp.basename(tracked_dir)))
 
 
+
 if __name__ == "__main__":
     import wandb 
+    import argparse
+    import wandb
+    import tyro
+
     wandb.init()  
+
+    work_dir = './output_da2_correct'
     config_1 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_1",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -364,10 +376,9 @@ if __name__ == "__main__":
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
-        port=7798
     )
     config_2 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_2",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -375,10 +386,9 @@ if __name__ == "__main__":
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
-        port=7798
     )
     config_3 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_3",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -386,10 +396,9 @@ if __name__ == "__main__":
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
-        port=7798
     )
     config_4 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_4",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -397,6 +406,5 @@ if __name__ == "__main__":
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
-        port=7798
     )
     main([config_1, config_2, config_3, config_4])
