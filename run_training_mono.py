@@ -104,9 +104,7 @@ def main(cfgs):
 
 
     train_dataset_0 = train_list[0][-1]#.train_step(batch_0)
-    train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
-    train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
-    train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
+
 
     debug=False
 
@@ -114,7 +112,7 @@ def main(cfgs):
     if debug:
       initialize_and_checkpoint_model(
           cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3 ],
+          [train_dataset_0],
           device,
           ckpt_path,
           vis=cfg.vis_debug,
@@ -126,7 +124,7 @@ def main(cfgs):
 
       initialize_and_checkpoint_model(
           cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3, ],
+          [train_dataset_0],
           device,
           ckpt_path,
           vis=cfg.vis_debug,
@@ -146,9 +144,6 @@ def main(cfgs):
 
 
     train_loader_0 = train_list[0][1]
-    train_loader_1 = train_list[1][1]
-    train_loader_2 = train_list[2][1]
-    train_loader_3 = train_list[3][1]
 
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
@@ -163,23 +158,20 @@ def main(cfgs):
 
         trainer.set_epoch(epoch)
 
-        train_loaders = [train_loader_0, train_loader_1, train_loader_2, train_loader_3]
+        train_loaders = [train_loader_0]
 
         # Zip the loaders to load one batch from each loader at each step
-        for batch_0, batch_1, batch_2, batch_3 in zip(*train_loaders):
+        for batch_0 in zip(*train_loaders):
 
             #### load multi-view data
             batch_0 = to_device(batch_0, device)
-            batch_1 = to_device(batch_1, device)
-            batch_2 = to_device(batch_2, device)
-            batch_3 = to_device(batch_3, device)
 
             
             if debug:
               loss = trainer.train_step([batch_0, batch_0, batch_0, batch_0])
 
             else:
-              loss = trainer.train_step([batch_0, batch_1, batch_2, batch_3])#(loss_0 + loss_1 + loss_2 + loss_3) / 4
+              loss = trainer.train_step(batch_0)#(loss_0 + loss_1 + loss_2 + loss_3) / 4
             loss.backward()
             trainer.op_af_bk()
 
@@ -245,39 +237,11 @@ def initialize_and_checkpoint_model(
             [fg_params.params[key] for fg_params in fg_params_fuse], dim=0
         )
 
-    nummms0 = len(fg_params_fuse[0].params['motion_coefs'])
-    nummms1 = len(fg_params_fuse[1].params['motion_coefs'])
-    nummms2 = len(fg_params_fuse[2].params['motion_coefs'])
-    nummms3 = len(fg_params_fuse[3].params['motion_coefs'])
-    to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), 4*10))
-
-
-    if debug:
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
-
-    else: 
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
-
-
-    fg_state_dict_fused[prefix+'motion_coefs'] = to_init
-
     bg_state_dict_fused = {} 
     for key in bg_params_fuse[0].params.keys():
         bg_state_dict_fused[prefix+key] = torch.cat(
             [bg_params.params[key] for bg_params in bg_params_fuse], dim=0
         )
-
-    #fg_params_fuse[0].scene_center
-    #for key in ['scene_center', 'scene_scale']:
-    #    fg_state_dict_fused[key] = torch.cat(
-    #        [fg_params[key] for fg_params in fg_params_fuse], dim=0
-    #    )
         
     motion_bases_state_dict_fused = {}
     for key in motion_bases_fuse[0].params.keys():
@@ -364,39 +328,5 @@ if __name__ == "__main__":
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
-        port=7798
     )
-    config_2 = TrainConfig(
-        work_dir="./outdir",
-        data=CustomDataConfig(
-            seq_name="toy_512_2",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-        port=7798
-    )
-    config_3 = TrainConfig(
-        work_dir="./outdir",
-        data=CustomDataConfig(
-            seq_name="toy_512_3",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-        port=7798
-    )
-    config_4 = TrainConfig(
-        work_dir="./outdir",
-        data=CustomDataConfig(
-            seq_name="toy_512_4",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-        port=7798
-    )
-    main([config_1, config_2, config_3, config_4])
+    main([config_1])

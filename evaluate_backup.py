@@ -17,25 +17,65 @@ from loguru import logger as guru
 import cv2
 from flow3d.renderer import Renderer
 from PIL import Image
-
+from typing import Annotated
 torch.set_float32_matmul_precision("high")
-
+from typing import Annotated
+from typing import cast
+import numpy as np
+import torch
+import tyro
+import yaml
+from flow3d.data.utils import to_device
+from loguru import logger as guru
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from dataclasses import asdict, dataclass
+from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
+from flow3d.data import (
+    BaseDataset,
+    DavisDataConfig,
+    CustomDataConfig,
+    get_train_val_datasets,
+    iPhoneDataConfig,
+)
+@dataclass
+class TrainConfig:
+    work_dir: str
+    data: (
+        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
+        | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
+        | Annotated[CustomDataConfig, tyro.conf.subcommand(name="custom")]
+    )
+    lr: SceneLRConfig
+    loss: LossesConfig
+    optim: OptimizerConfig
+    num_fg: int = 100_000
+    num_bg: int = 100_000
+    num_motion_bases: int = 10
+    num_epochs: int = 500
+    port: int | None = None
+    vis_debug: bool = False 
+    batch_size: int = 8
+    num_dl_workers: int = 4
+    validate_every: int = 50
+    save_videos_every: int = 50
 
 @dataclass
 class RenderConfig:
     work_dir: str 
 
 
-def main(cfg: RenderConfig):
+def main(cfg_1: RenderConfig, cfgs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
+
+    ckpt_path = f"{cfg_1.work_dir}/checkpoints/last.ckpt"
     assert os.path.exists(ckpt_path)
 
     renderer = Renderer.init_from_checkpoint(
         ckpt_path,
         device,
-        work_dir=cfg.work_dir,
+        work_dir=cfg_1.work_dir,
         port=None,
     )
     base_data_path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego'
@@ -45,7 +85,7 @@ def main(cfg: RenderConfig):
     with open(file_path, 'r') as file:
         json_file = json.load(file)
     md=json_file
-    base_visuals_path =f'{cfg.work_dir}/visuals'
+    base_visuals_path =f'{cfg_1.work_dir}/visuals'
     os.makedirs(base_visuals_path, exist_ok=True)
 
 
@@ -86,29 +126,6 @@ def main(cfg: RenderConfig):
 
     train_loaders = [train_loader_0, train_loader_1, train_loader_2, train_loader_3]
 
-    # Zip the loaders to load one batch from each loader at each step
-    for batch_0, batch_1, batch_2, batch_3 in zip(*train_loaders):
-
-        #### load multi-view data
-        batch_0 = to_device(batch_0, device)
-        batch_1 = to_device(batch_1, device)
-        batch_2 = to_device(batch_2, device)
-        batch_3 = to_device(batch_3, device)
-        batch = [batch_0, batch_0, batch_0, batch_0]
-
-        # (B,).
-        ts = batch["ts"]
-        # (B, 4, 4).
-        w2cs = batch["w2cs"]
-        # (B, 3, 3).
-        Ks = batch["Ks"]
-
-        rendered = renderer.model.render(
-            ts[i].item(),
-            w2cs[None, i],
-            Ks[None, i],
-            img_wh,
-        )
 
 
     for cam_index in range(1,5):
@@ -147,12 +164,6 @@ def main(cfg: RenderConfig):
             im = renderer.model.render(t, w2c[None], K[None], img_wh)["img"][0]
 
 
-
-
-
-
-
-
             im=im.clip(0,1)
             print(im.shape, im.max())
             im = np.array(im.detach().cpu().numpy()) * 255
@@ -167,4 +178,48 @@ def main(cfg: RenderConfig):
 
 
 if __name__ == "__main__":
-    main(tyro.cli(RenderConfig))
+    config_1 = TrainConfig(
+        work_dir="./outdir",
+        data=CustomDataConfig(
+            seq_name="toy_512_1",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+    config_2 = TrainConfig(
+        work_dir="./outdir",
+        data=CustomDataConfig(
+            seq_name="toy_512_2",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+    config_3 = TrainConfig(
+        work_dir="./outdir",
+        data=CustomDataConfig(
+            seq_name="toy_512_3",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+    config_4 = TrainConfig(
+        work_dir="./outdir",
+        data=CustomDataConfig(
+            seq_name="toy_512_4",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+
+
+    render_fig = RenderConfig(work_dir='outdir')
+    main(render_fig, [config_1, config_2, config_3, config_4])
+    
