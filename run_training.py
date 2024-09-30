@@ -241,6 +241,7 @@ def initialize_and_checkpoint_model(
     fg_state_dict_fused = {} 
 
     for key in fg_params_fuse[0].params.keys():
+        print(key)
         fg_state_dict_fused[prefix+key] = torch.cat(
             [fg_params.params[key] for fg_params in fg_params_fuse], dim=0
         )
@@ -366,7 +367,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_da2_correct'
+    work_dir = './output_da2_with_new_scale_shift'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
