@@ -2,7 +2,7 @@ import functools
 import time
 from dataclasses import asdict
 from typing import cast
-
+import wandb
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -168,12 +168,18 @@ class Trainer:
             self.viewer.lock.acquire()
 
         loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
+
+        self.stats = stats
+        self.num_rays_per_sec=num_rays_per_sec
         if loss.isnan():
             guru.info(f"Loss is NaN at step {self.global_step}!!")
             import ipdb
 
             ipdb.set_trace()
-        loss.backward()
+        #loss.backward()
+        return loss
+
+    def op_af_bk(self):
 
         for opt in self.optimizers.values():
             opt.step()
@@ -181,72 +187,104 @@ class Trainer:
         for sched in self.scheduler.values():
             sched.step()
 
-        self.log_dict(stats)
+        self.log_dict(self.stats)
         self.global_step += 1
         self.run_control_steps()
 
         if self.viewer is not None:
             self.viewer.lock.release()
-            self.viewer.state.num_train_rays_per_sec = num_rays_per_sec
+            self.viewer.state.num_train_rays_per_sec = self.num_rays_per_sec
             if self.viewer.mode == "training":
-                self.viewer.update(self.global_step, num_rays_per_step)
+                self.viewer.update(self.global_step, self.num_rays_per_step)
 
         if self.global_step % self.checkpoint_every == 0:
             self.save_checkpoint(f"{self.work_dir}/checkpoints/last.ckpt")
 
-        return loss.item()
+        #return loss.item()
 
     def compute_losses(self, batch):
+
         self.model.training = True
-        B = batch["imgs"].shape[0]
-        W, H = img_wh = batch["imgs"].shape[2:0:-1]
-        N = batch["target_ts"][0].shape[0]
+        B = len(batch) * batch[0]["imgs"].shape[0]
+        W, H = img_wh = batch[0]["imgs"].shape[2:0:-1]
 
-        # (B,).
-        ts = batch["ts"]
-        # (B, 4, 4).
-        w2cs = batch["w2cs"]
-        # (B, 3, 3).
-        Ks = batch["Ks"]
-        # (B, H, W, 3).
-        imgs = batch["imgs"]
-        # (B, H, W).
-        valid_masks = batch.get("valid_masks", torch.ones_like(batch["imgs"][..., 0]))
-        # (B, H, W).
-        masks = batch["masks"]
-        masks *= valid_masks
-        # (B, H, W).
-        depths = batch["depths"]
-        # [(P, 2), ...].
-        query_tracks_2d = batch["query_tracks_2d"]
-        # [(N,), ...].
-        target_ts = batch["target_ts"]
-        # [(N, 4, 4), ...].
-        target_w2cs = batch["target_w2cs"]
-        # [(N, 3, 3), ...].
-        target_Ks = batch["target_Ks"]
-        # [(N, P, 2), ...].
-        target_tracks_2d = batch["target_tracks_2d"]
-        # [(N, P), ...].
-        target_visibles = batch["target_visibles"]
-        # [(N, P), ...].
-        target_invisibles = batch["target_invisibles"]
-        # [(N, P), ...].
-        target_confidences = batch["target_confidences"]
-        # [(N, P), ...].
-        target_track_depths = batch["target_track_depths"]
+        N = batch[0]["target_ts"][0].shape[0]
 
+        '''
+        ts torch.Size([8])
+        w2cs torch.Size([8, 4, 4])
+        Ks torch.Size([8, 3, 3])
+        imgs torch.Size([8, 288, 512, 3])
+        depths torch.Size([8, 288, 512])
+        masks torch.Size([8, 288, 512])
+        valid_masks torch.Size([8, 288, 512])
+
+        #### 
+        query_tracks_2d 8 torch.Size([2017, 2])
+        target_ts 8 torch.Size([4])
+        target_w2cs 8 torch.Size([4, 4, 4])
+        target_Ks 8 torch.Size([4, 3, 3])
+        target_tracks_2d 8 torch.Size([4, 2017, 2])
+        target_visibles 8 torch.Size([4, 2017])
+        target_invisibles 8 torch.Size([4, 2017])
+        target_confidences 8 torch.Size([4, 2017])
+        target_track_depths 8 torch.Size([4, 2017])
+        '''
+
+        import torch
+
+        # Iterate over each batch in the list of batches.
+        # Concatenate ts across all batches (assuming ts is already a tensor with shape (B,)).
+        ts = torch.cat([b["ts"] for b in batch], dim=0)  # (sum of B across batches,)
+
+        # Concatenate world-to-camera matrices (B, 4, 4).
+        w2cs = torch.cat([b["w2cs"] for b in batch], dim=0)  # (sum of B across batches, 4, 4)
+
+        # Concatenate camera intrinsics (B, 3, 3).
+        Ks = torch.cat([b["Ks"] for b in batch], dim=0)  # (sum of B across batches, 3, 3)
+
+        # Concatenate images (B, H, W, 3).
+        imgs = torch.cat([b["imgs"] for b in batch], dim=0)  # (sum of B across batches, H, W, 3)
+
+        # Concatenate valid masks or create ones where masks are missing (B, H, W).
+        valid_masks = torch.cat([b.get("valid_masks", torch.ones_like(b["imgs"][..., 0])) for b in batch], dim=0)  # (sum of B across batches, H, W)
+
+        # Concatenate masks and apply valid_masks (B, H, W).
+        masks = torch.cat([b["masks"] for b in batch], dim=0) * valid_masks  # (sum of B across batches, H, W)
+
+        # Concatenate depth maps (B, H, W).
+        depths = torch.cat([b["depths"] for b in batch], dim=0)  # (sum of B across batches, H, W)
+
+        query_tracks_2d = [track for b in batch for track in b["query_tracks_2d"]]
+        target_ts = [ts for b in batch for ts in b["target_ts"]]
+
+        print(target_ts)
+        target_w2cs = [w2c for b in batch for w2c in b["target_w2cs"]]
+        target_Ks = [K for b in batch for K in b["target_Ks"]]
+        target_tracks_2d = [track for b in batch for track in b["target_tracks_2d"]]
+        target_visibles = [visible for b in batch for visible in b["target_visibles"]]
+        target_invisibles = [invisible for b in batch for invisible in b["target_invisibles"]]
+        target_confidences = [confidence for b in batch for confidence in b["target_confidences"]]
+        target_track_depths = [depth for b in batch for depth in b["target_track_depths"]]
+ # List of (N, P) per batch
         _tic = time.time()
         # (B, G, 3).
         means, quats = self.model.compute_poses_all(ts)  # (G, B, 3), (G, B, 4)
-        device = means.device
+
         means = means.transpose(0, 1)
         quats = quats.transpose(0, 1)
         # [(N, G, 3), ...].
+        # 8 torch.Size([4]) print(len(target_ts), target_ts[0].shape) 
         target_ts_vec = torch.cat(target_ts)
         # (B * N, G, 3).
-        target_means, _ = self.model.compute_poses_all(target_ts_vec)
+
+        target_means, target_quats = self.model.compute_poses_all(target_ts_vec)
+
+        device = target_means.device
         target_means = target_means.transpose(0, 1)
+        target_quats = target_quats.transpose(0, 1)
+
+
         target_mean_list = target_means.split(N)
         num_frames = self.model.num_frames
 
@@ -329,6 +367,13 @@ class Trainer:
         rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
             1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
         )
+
+        ###
+        ### DEBUGing
+        ###
+        #log_images(rendered_imgs, imgs)
+
+        #print(rendered_imgs.shape)
         loss += rgb_loss * self.losses_cfg.w_rgb
 
         # Mask loss.
@@ -394,13 +439,7 @@ class Trainer:
             mask=depth_masks,
             quantile=0.98,
         )
-        # depth_loss = cauchy_loss_with_uncertainty(
-        #     pred_disp.squeeze(-1),
-        #     tgt_disp.squeeze(-1),
-        #     depth_masks.squeeze(-1),
-        #     self.depth_uncertainty_activation(self.depth_uncertainties)[ts],
-        #     bias=1e-3,
-        # )
+
         loss += depth_loss * self.losses_cfg.w_depth_reg
 
         # mapped depth loss (using cached depth with EMA)
@@ -421,14 +460,7 @@ class Trainer:
             mask=depth_masks > 0.5,
             quantile=0.95,
         )
-        # depth_gradient_loss = compute_gradient_loss(
-        #     pred_disps,
-        #     ref_disps,
-        #     mask=depth_masks.squeeze(-1) > 0.5,
-        #     c=depth_uncertainty.detach(),
-        #     mode="l1",
-        #     bias=1e-3,
-        # )
+
         loss += depth_gradient_loss * self.losses_cfg.w_depth_grad
 
         # bases should be smooth.
@@ -769,6 +801,18 @@ def dup_in_optim(optimizer, new_params: list, should_dup: torch.Tensor, num_dups
         del old_params
         torch.cuda.empty_cache()
 
+def log_images(rendered_imgs, imgs):
+    # Convert tensors to numpy arrays if needed
+    rendered_imgs_np = rendered_imgs.detach().cpu().numpy() if isinstance(rendered_imgs, torch.Tensor) else rendered_imgs
+    imgs_np = imgs.detach().cpu().numpy() if isinstance(imgs, torch.Tensor) else imgs
+
+    # Log images to WandB
+    for i in range(rendered_imgs_np.shape[0]):
+        wandb.log({
+            f"Rendered Image_{i}": wandb.Image(rendered_imgs_np[i], caption=f"Rendered Img {i}"),
+            f"Original Image_{i}": wandb.Image(imgs_np[i], caption=f"Original Img {i}")
+        })
+    print("Images logged.")
 
 def remove_from_optim(optimizer, new_params: list, _should_cull: torch.Tensor):
     assert len(optimizer.param_groups) == len(new_params)

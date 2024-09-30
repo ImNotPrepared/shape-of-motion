@@ -28,6 +28,20 @@ from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.transforms import cont_6d_to_rmat, rt_to_mat4, solve_procrustes
 from flow3d.vis.utils import draw_keypoints_video, get_server, project_2d_tracks
 
+import open3d as o3d
+import numpy as np
+def o3d_knn(pts, num_knn):
+    indices = []
+    sq_dists = []
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(np.ascontiguousarray(pts, np.float64))
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    for p in pcd.points:
+        [_, i, d] = pcd_tree.search_knn_vector_3d(p, num_knn + 1)
+        indices.append(i[1:])
+        sq_dists.append(d[1:])
+    return np.array(sq_dists), np.array(indices)
+
 
 def init_fg_from_tracks_3d(
     cano_t: int, tracks_3d: TrackObservations, motion_coefs: torch.Tensor
@@ -55,6 +69,39 @@ def init_fg_from_tracks_3d(
     # Initialize gaussian opacities.
     opacities = torch.logit(torch.full((num_fg,), 0.7))
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
+
+    path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
+    new_pt_cld = np.load(path)["data"]
+    print('dyn_len', len(new_pt_cld))
+    def initialize_new_params(new_pt_cld):
+        #print(new_pt_cld.shape)
+        num_pts = new_pt_cld.shape[0]
+        means3D = new_pt_cld[:, :3] # [num_gaussians, 3]
+        unnorm_rots = np.tile([1, 0, 0, 0], (num_pts, 1)) # [num_gaussians, 4]
+        logit_opacities = torch.zeros((num_pts, 1), dtype=torch.float, device="cuda")
+        sq_dist, _ = o3d_knn(new_pt_cld[:, :3], 3)
+        mean3_sq_dist = sq_dist.mean(-1).clip(min=0.0000001)
+        seg = np.ones((num_pts))
+        params = {
+            'means3D': means3D,
+            'rgb_colors': new_pt_cld[:, 3:6],
+            'unnorm_rotations': unnorm_rots,
+            'seg_colors': np.stack((seg, np.zeros_like(seg), 1 - seg), -1),
+            'logit_opacities': logit_opacities,
+            'log_scales':  np.tile(np.log(np.sqrt(mean3_sq_dist))[..., None], (1, 3)),
+        }
+        params = {k: torch.nn.Parameter(torch.tensor(v).cuda().float().contiguous().requires_grad_(True)) for k, v in
+                  params.items()}
+      
+        return params
+
+    #new_params = initialize_new_params(new_pt_cld)
+    #means, quats, scales, colors, opacities = new_params['means3D'], new_params['unnorm_rotations'], new_params['log_scales'], new_params['rgb_colors'], new_params['logit_opacities'] 
+    #dists2centers = torch.norm(means_cano[:, None] - sampled_centers, dim=-1)
+    #motion_coefs = 10 * torch.exp(-dists2centers)
+    #motion_coefs = 
+    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
+
     return gaussians
 
 
@@ -118,7 +165,7 @@ def init_motion_params_with_procrustes(
     num_frames = tracks_3d.xyz.shape[1]
     # sample centers and get initial se3 motion bases by solving procrustes
     means_cano = tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
-
+    print('aaaaaaaaaaaaaaaaFUCKOFFaaaaaaaaaaaa', )
     # remove outliers
     scene_center = means_cano.median(dim=0).values
     print(f"{scene_center=}")
@@ -152,8 +199,10 @@ def init_motion_params_with_procrustes(
 
     # assign each point to the label to compute the cluster weight
     ids, counts = labels.unique(return_counts=True)
-    ids = ids[counts > 100]
-    num_bases = len(ids)
+    print(f"{ids=} {counts=}")
+    ids = ids[counts > 80] ### 100
+    print(f"{ids=}")
+    #num_bases = len(ids)
     sampled_centers = sampled_centers[:, ids]
     print(f"{num_bases=} {sampled_centers.shape=}")
 
@@ -257,7 +306,7 @@ def init_motion_params_with_procrustes(
         ipdb.set_trace()
 
     bases = MotionBases(init_rots, init_ts)
-    return bases, motion_coefs, tracks_3d
+    return bases, motion_coefs, tracks_3d#, sampled_centers
 
 
 def run_initial_optim(
@@ -275,6 +324,7 @@ def run_initial_optim(
     :param motion_coefs: [num_bases, num_frames]
     :param means: [num_gaussians, 3]
     """
+
     optimizer = torch.optim.Adam(
         [
             {"params": bases.params["rots"], "lr": 1e-2},
@@ -570,6 +620,7 @@ def sample_initial_bases_centers(
         model = HDBSCAN(min_cluster_size=20, max_cluster_size=num_tracks // 4)
     model.fit(vel_dirs)
     labels = model.labels_
+    num_bases_org = 10
     num_bases = labels.max().item() + 1
     sampled_centers = torch.stack(
         [
@@ -577,7 +628,16 @@ def sample_initial_bases_centers(
             for i in range(num_bases)
         ]
     )[None]
-    print("number of {} clusters: ".format(mode), num_bases)
+
+    #if num_bases < num_bases_org:
+    #    num_to_duplicate = num_bases_org - num_bases
+    #    indices_to_duplicate = torch.arange(num_to_duplicate) % num_bases
+    #    extra_centers = sampled_centers[:, indices_to_duplicate]
+    #    sampled_centers = torch.cat([sampled_centers, extra_centers], dim=1)
+
+
+    print(torch.tensor(labels).shape, 'labelshapeppp')
+    print("number of {} clusters: ".format(mode), num_bases) ## labels [N]
     return sampled_centers, num_bases, torch.tensor(labels)
 
 
@@ -642,3 +702,79 @@ def batched_interp_masked(
             )  # (batch_num, batch_time, *)
             out[b : b + batch_num, m : m + batch_time] = x
     return out
+
+
+
+def init_fg_from_known_pc(
+    cano_t: int, tracks_3d: TrackObservations, motion_coefs: torch.Tensor
+) -> GaussianParams:
+    """
+    using dataclasses individual tensors so we know they're consistent
+    and are always masked/filtered together
+    """
+    num_fg = tracks_3d.xyz.shape[0]
+
+    # Initialize gaussian colors.
+    colors = torch.logit(tracks_3d.colors)
+    # Initialize gaussian scales: find the average of the three nearest
+    # neighbors in the first frame for each point and use that as the
+    # scale.
+    dists, _ = knn(tracks_3d.xyz[:, cano_t], 3)
+    dists = torch.from_numpy(dists)
+    scales = dists.mean(dim=-1, keepdim=True)
+    scales = scales.clamp(torch.quantile(scales, 0.05), torch.quantile(scales, 0.95))
+    scales = torch.log(scales.repeat(1, 3))
+    # Initialize gaussian means.
+    means = tracks_3d.xyz[:, cano_t]
+    # Initialize gaussian orientations as random.
+    quats = torch.rand(num_fg, 4)
+    # Initialize gaussian opacities.
+    opacities = torch.logit(torch.full((num_fg,), 0.7))
+    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
+    return gaussians
+
+
+def init_bg(
+    points: StaticObservations,
+) -> GaussianParams:
+    """
+    using dataclasses instead of individual tensors so we know they're consistent
+    and are always masked/filtered together
+    """
+    num_init_bg_gaussians = points.xyz.shape[0]
+    bg_scene_center = points.xyz.mean(0)
+    bg_points_centered = points.xyz - bg_scene_center
+    bg_min_scale = bg_points_centered.quantile(0.05, dim=0)
+    bg_max_scale = bg_points_centered.quantile(0.95, dim=0)
+    bg_scene_scale = torch.max(bg_max_scale - bg_min_scale).item() / 2.0
+    bkdg_colors = torch.logit(points.colors)
+
+    # Initialize gaussian scales: find the average of the three nearest
+    # neighbors in the first frame for each point and use that as the
+    # scale.
+    dists, _ = knn(points.xyz, 3)
+    dists = torch.from_numpy(dists)
+    bg_scales = dists.mean(dim=-1, keepdim=True)
+    bkdg_scales = torch.log(bg_scales.repeat(1, 3))
+
+    bg_means = points.xyz
+
+    # Initialize gaussian orientations by normals.
+    local_normals = points.normals.new_tensor([[0.0, 0.0, 1.0]]).expand_as(
+        points.normals
+    )
+    bg_quats = roma.rotvec_to_unitquat(
+        F.normalize(local_normals.cross(points.normals), dim=-1)
+        * (local_normals * points.normals).sum(-1, keepdim=True).acos_()
+    ).roll(1, dims=-1)
+    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
+    gaussians = GaussianParams(
+        bg_means,
+        bg_quats,
+        bkdg_scales,
+        bkdg_colors,
+        bg_opacities,
+        scene_center=bg_scene_center,
+        scene_scale=bg_scene_scale,
+    )
+    return gaussians

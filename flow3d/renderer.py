@@ -75,7 +75,8 @@ class Renderer:
             else None
         )
         self.model.training = False
-        img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
+        #fg_only=True
+        img = self.model.render(t, w2c[None], K[None], img_wh, )["img"][0]
         if not self.viewer._render_track_checkbox.value:
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
         else:

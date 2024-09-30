@@ -100,11 +100,7 @@ class CasualDataset(BaseDataset):
         **_,
     ):
         super().__init__()
-        #/data3/zihanwa3/Capstone-DSR/Appendix/Depth-Anything-V2/new_scales_shifts.json
-        pathhh = '/data3/zihanwa3/Capstone-DSR/Appendix/Depth-Anything-V2/new_scales_shifts.json'
-        with open(pathhh, 'r') as f:
-            scales_shifts = json.load(f)['scales_shifts']
-        self.scales_shifts=scales_shifts
+
         self.seq_name = seq_name
         self.root_dir = root_dir
         self.res = res
@@ -128,101 +124,80 @@ class CasualDataset(BaseDataset):
         self.start = start
         self.end = end
         self.frame_names = frame_names[start:end]
-        print(self.start, self.end)
 
         self.imgs: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.depths: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.masks: list[torch.Tensor | None] = [None for _ in self.frame_names]
 
 
-        self.debug=False
+
         def load_known_cameras(
-            path: str, H: int, W: int, noise: bool
+            path: str, H: int, W: int
         ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             assert os.path.exists(path), f"Camera file {path} does not exist."
+
+
             md = json.load(open(path, 'r'))
             c2ws = []
-            #for c in range(4, 5):
-            c = int(self.seq_name[-1])
-            for t in range(183, 295):
-              h, w = md['hw'][c]
-              k, w2c =  md['k'][t][c], np.linalg.inv(md['w2c'][t][c])
-
-              if noise:
-                R = w2c[:3, :3]
-                t = w2c[:3, 3]
-
-                # Define the maximum deviation in degrees and convert to radians
-                max_deviation_deg = 5
-                max_deviation_rad = np.deg2rad(max_deviation_deg)
-
-                # Generate random rotation angles within ±5 degrees for each axis
-                noise_angles = np.random.uniform(-max_deviation_rad, max_deviation_rad, size=3)
-
-                # Create rotation matrices around x, y, and z axes
-                Rx = np.array([
-                    [1, 0, 0],
-                    [0, np.cos(noise_angles[0]), -np.sin(noise_angles[0])],
-                    [0, np.sin(noise_angles[0]),  np.cos(noise_angles[0])]
-                ])
-
-                Ry = np.array([
-                    [ np.cos(noise_angles[1]), 0, np.sin(noise_angles[1])],
-                    [0, 1, 0],
-                    [-np.sin(noise_angles[1]), 0, np.cos(noise_angles[1])]
-                ])
-
-                Rz = np.array([
-                    [np.cos(noise_angles[2]), -np.sin(noise_angles[2]), 0],
-                    [np.sin(noise_angles[2]),  np.cos(noise_angles[2]), 0],
-                    [0, 0, 1]
-                ])
-
-                # Combine the rotation matrices
-                R_noise = Rz @ Ry @ Rx
-
-                # Apply the rotation noise to the original rotation
-                R_new = R_noise @ R
-
-                # Construct the new w2c matrix with the noisy rotation and original translation
-                w2c_new = np.eye(4)
-                w2c_new[:3, :3] = R_new
-                w2c_new[:3, 3] = t
-
-                # Update w2c with the new matrix
-                w2c = w2c_new
-
-              c2ws.append(w2c[None, ...])
+            for c in range(4, 5):
+              for t in range(183, 295):
+                h, w = md['hw'][c]
+                k, w2c =  md['k'][t][c], np.linalg.inv(md['w2c'][t][c])
+                print(w2c.shape)
+                c2ws.append(w2c[None, ...])
 
             traj_c2w = np.concatenate(c2ws)
+            #traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
+            #h, w = recon["img_shape"]
             sy, sx = H / h, W / w
+            #traj_w2c = np.linalg.inv(traj_c2w)
             fx, fy, cx, cy = k[0][0],  k[1][1], k[0][2], k[1][2], # (4,)
-
             K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)
             Ks = np.tile(K[None, ...], (len(traj_c2w), 1, 1))  # (N, 3, 3)
-
-            path='/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/droid_recon/toy_4.npy'
-            recon = np.load(path, allow_pickle=True).item()
-            kf_tstamps = recon["tstamps"].astype("int")
+            kf_tstamps = np.array(list(range(183, 295))).astype("int")
             return (
                 torch.from_numpy(traj_c2w).float(),
                 torch.from_numpy(Ks).float(),
                 torch.from_numpy(kf_tstamps),
             )
-        
 
+        # load cameras
+        #if camera_type == "droid_recon":
+        #    img = self.get_image(0)
+        #    H, W = img.shape[:2]
+        #    w2cs, Ks, tstamps = load_cameras(
+        #        f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
+        #    )
+        
+        def load_cameras(
+            path: str, H: int, W: int
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            assert os.path.exists(path), f"Camera file {path} does not exist."
+            recon = np.load(path, allow_pickle=True).item()
+            guru.debug(f"{recon.keys()=}")
+            traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
+            h, w = recon["img_shape"]
+            sy, sx = H / h, W / w
+            traj_w2c = np.linalg.inv(traj_c2w)
+            fx, fy, cx, cy = recon["intrinsics"]  # (4,)
+            K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)
+            Ks = np.tile(K[None, ...], (len(traj_c2w), 1, 1))  # (N, 3, 3)
+            kf_tstamps = recon["tstamps"].astype("int")
+            return (
+                torch.from_numpy(traj_w2c).float(),
+                torch.from_numpy(Ks).float(),
+                torch.from_numpy(kf_tstamps),
+            )
         if camera_type == "droid_recon":
             img = self.get_image(0)
             H, W = img.shape[:2]
-            path = "/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/Dy_train_meta.json"
-            if self.debug:
-              w2cs, Ks, tstamps = load_cameras(
-                  f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
-              )
-            else:
-              w2cs, Ks, tstamps = load_known_cameras(
-               path, H, W, noise=False ##############################FUKKKING DOG
-              )
+            #w2cs, Ks, tstamps = load_cameras(
+            #    f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
+            #)
+            w2cs, Ks, tstamps = load_known_cameras(
+                "/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/Dy_train_meta.json", H, W
+            )
+
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
         assert (
@@ -252,6 +227,13 @@ class CasualDataset(BaseDataset):
                 os.makedirs(self.cache_dir, exist_ok=True)
                 torch.save(scene_norm_dict, cached_scene_norm_dict_path)
 
+        # transform cameras
+        self.scene_norm_dict = cast(SceneNormDict, scene_norm_dict)
+        self.scale = self.scene_norm_dict["scale"]
+        transform = self.scene_norm_dict["transfm"]
+        guru.info(f"scene norm {self.scale=}, {transform=}")
+        self.w2cs = torch.einsum("nij,jk->nik", self.w2cs, torch.linalg.inv(transform))
+        self.w2cs[:, :3, 3] /= self.scale
 
     @property
     def num_frames(self) -> int:
@@ -289,24 +271,20 @@ class CasualDataset(BaseDataset):
     def get_depth(self, index) -> torch.Tensor:
         if self.depths[index] is None:
             self.depths[index] = self.load_depth(index)
-        return self.depths[index] #/ self.scale
+        return self.depths[index] / self.scale
 
     def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}{self.img_ext}"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
     def load_mask(self, index) -> torch.Tensor:
-
-        if self.debug:
-          path = f"{self.mask_dir}/{self.frame_names[index]}.png"
-          r = self.mask_erosion_radius
-          mask = imageio.imread(path)
-
-        else:
-          path = f"{self.mask_dir}/{self.frame_names[index]}.npz"
-          r = self.mask_erosion_radius
-          mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+        path = f"{self.mask_dir}/{self.frame_names[index]}.npz"
+        r = self.mask_erosion_radius
+        mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
         # 2160, 3840, 1
+
+
+        print(mask.shape)
 
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
         bg_mask = ~fg_mask
@@ -321,70 +299,12 @@ class CasualDataset(BaseDataset):
         out_mask[fg_mask_erode > 0] = 1
         return torch.from_numpy(out_mask).float()
 
-    def load_org_depth(self, index) -> torch.Tensor:
+    def load_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         disp = np.load(path)
         depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
         depth = torch.from_numpy(depth).float()
         depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
-        return depth
-
-    def load_depth(self, index) -> torch.Tensor:
-        #  load_da2_depth load_duster_depth load_org_depth
-        return self.load_da2_depth(index)
-
-    def load_duster_depth(self, index) -> torch.Tensor:
-# /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
-# /toy_512_4/00194.npy /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//toy_512_4
-# /data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/4/disp_0.npz
-        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
-        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth/')
-        path = path.replace('toy_512_', '')
-        path = path.replace('disp_', '')
-
-        disp_map =  np.load(path)['depth']
-        depth_map = np.clip(disp_map, a_min=1e-6, a_max=1e6)
-        depth = torch.from_numpy(depth_map).float()
-        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
-
-        output_size = (288, 512)  # (height, width)
-        resized_tensor = F.interpolate(input_tensor, size=output_size, mode='bilinear', align_corners=False)
-
-        # If you want to remove the added dimensions
-        depth = resized_tensor.squeeze(0).squeeze(0) 
-        return depth
-
-
-
-    def load_da2_depth(self, index) -> torch.Tensor:
-        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
-        near, far = 1e-7, 7e1
-        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/')
-        path = path.replace('toy_512_', '')
-        camera_index = int(self.depth_dir[-1]) -1 
-        absolute_index=index+60 ### now it is 123, 423
-        scale, shift = self.scales_shifts[absolute_index][camera_index]
-        disp_map =  np.load(path)['depth_map']
-        nonzero_mask = disp_map != 0
-        
-        disp_map[nonzero_mask] = disp_map[nonzero_mask]* scale + shift
-        valid_depth_mask = (disp_map > 0) & (disp_map <= far)
-        disp_map[~valid_depth_mask] = 0
-        depth_map = np.full(disp_map.shape, np.inf)
-        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
-        depth_map[depth_map == np.inf] = 0
-        depth_map = depth_map.astype(np.float32)
-        depth = torch.from_numpy(depth_map).float()
-        input_tensor = depth.unsqueeze(0).unsqueeze(0)  # Now size [1, 1, 288, 512]
-
-        # Define the target size
-        output_size = (288, 512)  # (height, width)
-
-        # Resize the tensor
-        resized_tensor = F.interpolate(input_tensor, size=output_size, mode='bilinear', align_corners=False)
-        depth = resized_tensor.squeeze(0).squeeze(0) 
         return depth
 
     def load_target_tracks(
@@ -443,11 +363,17 @@ class CasualDataset(BaseDataset):
         return tracks_3d, visibles, invisibles, confidences, colors
 
 
+        def load_cameras(
+            path: str, H: int, W: int
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            assert os.path.exists(path), f"Camera file {path} does not exist."
+
+
 
     def get_bkgd_points(
         self,
         num_samples: int,
-        use_kf_tstamps: bool = False,
+        use_kf_tstamps: bool = True,
         stride: int = 8,
         down_rate: int = 8,
         min_per_frame: int = 64,
@@ -478,6 +404,10 @@ class CasualDataset(BaseDataset):
             img = self.get_image(query_idx)
             depth = self.get_depth(query_idx)
             bg_mask = self.get_mask(query_idx) < 0
+
+            print(bg_mask.shape, depth.shape)
+
+
             bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
 
             w2c = self.w2cs[query_idx]
@@ -624,13 +554,7 @@ def compute_scene_norm(
     )
     transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
     return scale, transfm
-'''
-0.13333333333333333 0.13333333333333333 scalllllllllllllllllllllllllllllllllllllllllll
-[[237.74204102   0.         256.        ]
- [  0.         237.74204102 144.        ]
- [  0.           0.           1.        ]] scalllllllllllllllllllllllllllllllllllllllllll
 
-'''
 
 if __name__ == "__main__":
     d = CasualDataset("bear", "/shared/vye/datasets/DAVIS", camera_type="droid_recon")

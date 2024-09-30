@@ -18,6 +18,7 @@ class GaussianParams(nn.Module):
         motion_coefs: torch.Tensor | None = None,
         scene_center: torch.Tensor | None = None,
         scene_scale: torch.Tensor | float = 1.0,
+        semantic_features: torch.Tensor | None = None,
     ):
         super().__init__()
         if not check_gaussian_sizes(
@@ -35,6 +36,8 @@ class GaussianParams(nn.Module):
         }
         if motion_coefs is not None:
             params_dict["motion_coefs"] = nn.Parameter(motion_coefs)
+        if semantic_features is not None:
+            params_dict["semantic_features"] = nn.Parameter(semantic_features)
         self.params = nn.ParameterDict(params_dict)
         self.quat_activation = lambda x: F.normalize(x, dim=-1, p=2)
         self.color_activation = torch.sigmoid
@@ -53,6 +56,7 @@ class GaussianParams(nn.Module):
         assert all(f"{prefix}{k}" in state_dict for k in req_keys)
         args = {
             "motion_coefs": None,
+            "semantic_features": None, 
             "scene_center": torch.zeros(3),
             "scene_scale": torch.tensor(1.0),
         }
@@ -80,6 +84,10 @@ class GaussianParams(nn.Module):
     def get_coefs(self) -> torch.Tensor:
         assert "motion_coefs" in self.params
         return self.motion_coef_activation(self.params["motion_coefs"])
+
+    def get_features(self) -> torch.Tensor:
+        assert "semantic_features" in self.params
+        return (self.params["semantic_features"]) #self.motion_coef_activation
 
     def densify_params(self, should_split, should_dup):
         """
