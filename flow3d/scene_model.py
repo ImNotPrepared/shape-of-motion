@@ -304,7 +304,7 @@ class SceneModel(nn.Module):
             width=W,
             height=H,
             packed=False,
-            render_mode=mode[0],
+            render_mode="RGB",
         )
 
         '''

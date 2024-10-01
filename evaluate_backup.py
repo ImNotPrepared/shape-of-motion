@@ -38,6 +38,7 @@ from flow3d.data import (
     get_train_val_datasets,
     iPhoneDataConfig,
 )
+near, far = 1e-7, 7e1
 @dataclass
 class TrainConfig:
     work_dir: str
@@ -63,6 +64,70 @@ class TrainConfig:
 @dataclass
 class RenderConfig:
     work_dir: str 
+
+
+def interpolate_extrinsics(extrinsics1, extrinsics2, alpha):
+    """
+    Interpolate between two extrinsics matrices (4x4) by factor alpha.
+    Returns the interpolated extrinsics matrix.
+    """
+    # import pytorch3d.transforms as transforms
+    # Extract rotation matrices and translation vectors
+    
+    R1, t1 = extrinsics1[:3, :3], extrinsics1[:3, 3]
+    R2, t2 = extrinsics2[:3, :3], extrinsics2[:3, 3]
+
+    # Convert rotation matrices to quaternions
+    quat1 = transforms.matrix_to_quaternion(R1)
+    quat2 = transforms.matrix_to_quaternion(R2)
+
+    # Perform SLERP on quaternions
+    quat_interp = slerp(quat1, quat2, alpha)
+    quat_interp = quat_interp / quat_interp.norm()  
+    R_interp = transforms.quaternion_to_matrix(quat_interp)
+
+    # Interpolate translation vectors
+    t_interp = (1 - alpha) * t1 + alpha * t2
+
+    # Combine into extrinsics matrix
+    extrinsics_interp = torch.eye(4, dtype=extrinsics1.dtype).to(extrinsics1.device)
+    extrinsics_interp[:3, :3] = R_interp
+    extrinsics_interp[:3, 3] = t_interp
+
+    return extrinsics_interp
+
+def data_prep(lis):
+  for iiiindex, c in sorted(enumerate(lis)):
+    t=0
+    fn = md['fn'][t][c]
+    filename=f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}"
+    raw_image = cv2.imread(filename)
+    h, w = md['hw'][c]
+    k, w2c =  torch.tensor(md['k'][t][c]), np.linalg.inv(md['w2c'][t][c])
+    fn = md['fn'][t][c]
+    im = np.array(copy.deepcopy(Image.open(f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}")))
+    im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
+    im=im.clip(0,1)
+    
+    ############################## First Frame Depth #############################
+    depth_path=f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
+    depth = torch.tensor(np.load(depth_path)['depth_map'])
+    assert depth.shape[1] !=  depth.shape[0]
+
+    ################DOING REGULAR VIS #################
+    scale, shift = scales_shifts[c-1404]
+    disp_map = depth
+    nonzero_mask = disp_map != 0
+    disp_map[nonzero_mask] = disp_map[nonzero_mask] * scale + shift
+    valid_depth_mask = (disp_map > 0) & (disp_map <= far)
+    disp_map[~valid_depth_mask] = 0
+    depth_map = np.full(disp_map.shape, np.inf)
+    depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
+    depth_map[depth_map == np.inf] = 0
+    depth_map = depth_map.astype(np.float32)
+    depth = torch.tensor(depth_map)
+
+  return depth, torch.tensor(k).float(), torch.tensor(w2c).float(), h, w, im
 
 
 def main(cfg_1: RenderConfig, cfgs):
@@ -167,8 +232,6 @@ def main(cfg_1: RenderConfig, cfgs):
             im=im.clip(0,1)
             print(im.shape, im.max())
             im = np.array(im.detach().cpu().numpy()) * 255
-
-
             new_width, new_height = w, h  # desired dimensions
             im = cv2.resize(im, dsize=(new_width, new_height), interpolation=cv2.INTER_LINEAR)
             image = Image.fromarray((im).astype(np.uint8))
@@ -176,10 +239,88 @@ def main(cfg_1: RenderConfig, cfgs):
         print(f'saving to {(base_visuals_path)}')
         imageio.mimsave(os.path.join(base_visuals_path, f'cam_{cam_index}.gif'), images, fps=5)
 
+    import copy
+    extrinsics_interps=[]
+    alphas = torch.linspace(0, 1, steps=7)
+    Exs = [(1400, 1401), (1401, 1402), (1402, 1403), (1403, 1400)]
+    losses = 0
+    seq='cmu_bike'
+    md = json.load(open(f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{seq}/train_meta.json", 'r'))
+    def data_prep(lis):
+      for iiiindex, c in sorted(enumerate(lis)):
+        t=0
+        fn = md['fn'][t][c]
+        filename=f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}"
+        raw_image = cv2.imread(filename)
+        h, w = md['hw'][c]
+        k, w2c =  torch.tensor(md['k'][t][c]), np.linalg.inv(md['w2c'][t][c])
+        fn = md['fn'][t][c]
+        im = np.array(copy.deepcopy(Image.open(f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}")))
+        im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
+        im=im.clip(0,1)
+        
+        ############################## First Frame Depth #############################
+        depth_path=f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
+        depth = torch.tensor(np.load(depth_path)['depth_map'])
+        assert depth.shape[1] !=  depth.shape[0]
+
+        ################DOING REGULAR VIS #################
+        #cale, shift = scales_shifts[c-1404]
+        disp_map = depth
+        nonzero_mask = disp_map != 0
+        disp_map[nonzero_mask] = disp_map[nonzero_mask] #* scale + shift
+        valid_depth_mask = (disp_map > 0) & (disp_map <= far)
+        disp_map[~valid_depth_mask] = 0
+        depth_map = np.full(disp_map.shape, np.inf)
+        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
+        depth_map[depth_map == np.inf] = 0
+        depth_map = depth_map.astype(np.float32)
+        depth = torch.tensor(depth_map)
+
+      return depth, torch.tensor(k).float(), torch.tensor(w2c).float(), h, w, im
+
+
+    with open('/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/extrinsics_interpolated.json', 'r') as json_file:
+        extrinsics_results = json.load(json_file)
+
+    # Print or access the extrinsics for specific pairs
+    for cam_index, cams in extrinsics_results.items():
+      #print(cam)
+      #print(np.array(cam).shape)
+      for gggg, cam in enumerate(cams):
+        w2c, k = cam 
+        w2c, k = (np.array(w2c), np.array(k))
+        images = []
+        for i, frame_index in enumerate(reversed_range):
+            w2c = torch.tensor(w2c).float().cuda()
+            scale_x=scale_y=1.0
+            K_scaled = k.copy()
+            K_scaled[0, 0] *= scale_x  # fx
+            K_scaled[1, 1] *= scale_y  # fy
+            K = torch.tensor(K_scaled).float().cuda()
+            renderer.model.training = False
+            img_wh = w, h
+            t = torch.tensor(
+              [frame_index]
+            )
+            im = renderer.model.render(t, w2c[None], K[None], img_wh)["img"][0]
+            im=im.clip(0,1)
+            im = np.array(im.detach().cpu().numpy()) * 255
+            new_width, new_height = w, h  # desired dimensions
+            im = cv2.resize(im, dsize=(new_width, new_height), interpolation=cv2.INTER_LINEAR)
+            image = Image.fromarray((im).astype(np.uint8))
+            images.append(np.array(image))
+        print(f'saving to {(base_visuals_path)}')
+        imageio.mimsave(os.path.join(base_visuals_path, f'cam_int_{cam_index}_{gggg}.gif'), images, fps=5)
+
+
+
 
 if __name__ == "__main__":
+    #work_dir = ((tyro.cli(RenderConfig)).work_dir)
+    work_dir = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/output_duster_correct'
     config_1 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_1",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -189,7 +330,7 @@ if __name__ == "__main__":
         optim=tyro.cli(OptimizerConfig),
     )
     config_2 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_2",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -199,7 +340,7 @@ if __name__ == "__main__":
         optim=tyro.cli(OptimizerConfig),
     )
     config_3 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_3",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -209,7 +350,7 @@ if __name__ == "__main__":
         optim=tyro.cli(OptimizerConfig),
     )
     config_4 = TrainConfig(
-        work_dir="./outdir",
+        work_dir=work_dir,
         data=CustomDataConfig(
             seq_name="toy_512_4",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
@@ -220,6 +361,6 @@ if __name__ == "__main__":
     )
 
 
-    render_fig = RenderConfig(work_dir='outdir')
+    render_fig = RenderConfig(work_dir=work_dir)
     main(render_fig, [config_1, config_2, config_3, config_4])
     

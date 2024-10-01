@@ -24,23 +24,23 @@ torch.set_float32_matmul_precision("high")
 class RenderConfig:
     work_dir: str
     port: int = 8890
-    fg_only: bool = False
 
 
 def main(cfg: RenderConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-    assert os.path.exists(ckpt_path)
 
-    renderer = Renderer.init_from_checkpoint(
-        ckpt_path,
-        device,
+    init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'    
+    
+
+    assert os.path.exists(ckpt_path)
+    renderer = Renderer.init_from_pc_checkpoint(
+        pc_dir=init_pt_path,
+        device=device,
         work_dir=cfg.work_dir,
         port=cfg.port,
-        fg_only=cfg.fg_only,
     )
-
     guru.info(f"Starting rendering from {renderer.global_step=}")
     while True:
         time.sleep(1.0)

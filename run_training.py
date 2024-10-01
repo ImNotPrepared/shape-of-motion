@@ -367,7 +367,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_da2_with_new_scale_shift'
+    work_dir = './output_da2_with_new_scale_shift_2'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
