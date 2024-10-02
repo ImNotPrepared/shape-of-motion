@@ -24,7 +24,6 @@ torch.set_float32_matmul_precision("high")
 class RenderConfig:
     work_dir: str
     port: int = 8890
-    fg_only: bool = False
 
 
 def main(cfg: RenderConfig):
@@ -38,7 +37,6 @@ def main(cfg: RenderConfig):
         device,
         work_dir=cfg.work_dir,
         port=cfg.port,
-        fg_only=cfg.fg_only,
     )
 
     guru.info(f"Starting rendering from {renderer.global_step=}")

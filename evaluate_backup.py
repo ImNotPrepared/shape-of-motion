@@ -191,7 +191,7 @@ def main(cfg_1: RenderConfig, cfgs):
 
     train_loaders = [train_loader_0, train_loader_1, train_loader_2, train_loader_3]
 
-
+    fg_only= True
 
     for cam_index in range(1,5):
         h, w = md['hw'][cam_index]
@@ -226,7 +226,7 @@ def main(cfg_1: RenderConfig, cfgs):
             t = torch.tensor(
               [frame_index]
             )
-            im = renderer.model.render(t, w2c[None], K[None], img_wh)["img"][0]
+            im = renderer.model.render(t, w2c[None], K[None], img_wh, fg_only=fg_only)["img"][0]
 
 
             im=im.clip(0,1)
@@ -303,7 +303,7 @@ def main(cfg_1: RenderConfig, cfgs):
             t = torch.tensor(
               [frame_index]
             )
-            im = renderer.model.render(t, w2c[None], K[None], img_wh)["img"][0]
+            im = renderer.model.render(t, w2c[None], K[None], img_wh, fg_only=fg_only)["img"][0]
             im=im.clip(0,1)
             im = np.array(im.detach().cpu().numpy()) * 255
             new_width, new_height = w, h  # desired dimensions

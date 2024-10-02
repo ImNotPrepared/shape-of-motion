@@ -24,8 +24,12 @@ class Renderer:
 
         self.model = model
         if self.model is None:
-          self.num_frames = 1
-          self.pc = init_pt_cld = np.load(pc_dir)["data"]
+          self.pc = init_pt_cld = np.load(pc_dir)#["data"]
+          self.num_frames = len(self.pc.keys())
+
+          if self.num_frames == 1:
+            self.pc = np.load(pc_dir)["data"]
+
         else:
           self.num_frames = model.num_frames
 
@@ -71,8 +75,8 @@ class Renderer:
         model = SceneModel.init_from_state_dict(state_dict)
         model = model.to(device)
         renderer = Renderer(model, device, *args, **kwargs)
-        renderer.global_step = ckpt.get("global_step", 0)
-        renderer.epoch = ckpt.get("epoch", 0)
+        renderer.global_step = 7000
+        renderer.epoch = 499
         print(renderer.global_step, renderer.epoch, 'renderfig')
         return renderer
 
@@ -81,8 +85,8 @@ class Renderer:
         device: torch.device, *args, **kwargs
     ) -> "Renderer":
         renderer = Renderer(device=device, *args, **kwargs)
-        renderer.global_step = ckpt.get("global_step", 0)
-        renderer.epoch = ckpt.get("epoch", 0)
+        renderer.global_step = 7000
+        renderer.epoch = 499
         return renderer
 
     @torch.inference_mode()
@@ -105,13 +109,23 @@ class Renderer:
             if not self.viewer._canonical_checkbox.value
             else None
         )
-        self.model.training = False
+        # [t]
+        # Assuming self.pc is of shape [N, 6] with XYZRGB
+        try:  
+          pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
+        except:
+          pc = torch.tensor(self.pc).cuda()[:, :6].float()
 
-        pc = self.pc[t]
-        ones = torch.ones((pc.shape[0], 1), device=pc.device)
-        pc_homogeneous = torch.cat([pc, ones], dim=1)  # Shape: (N, 4)
+        pc_xyz = pc[:, :3]   # Shape: (N, 3)
+        colors = pc[:, 3:6]  # Shape: (N, 3)
+
+        # Create homogeneous coordinates for XYZ
+        ones = torch.ones((pc_xyz.shape[0], 1), device=pc.device)
+        pc_homogeneous = torch.cat([pc_xyz, ones], dim=1)  # Shape: (N, 4)
+
         # Transform points to camera coordinates
         pc_camera = (w2c @ pc_homogeneous.T).T  # Shape: (N, 4)
+
         # Discard the homogeneous coordinate
         pc_camera = pc_camera[:, :3]  # Shape: (N, 3)
 
@@ -128,6 +142,7 @@ class Renderer:
 
         u = K[0, 0] * x + K[0, 2]
         v = K[1, 1] * y + K[1, 2]
+
         # Image dimensions
         width, height = W, H
 
@@ -136,20 +151,17 @@ class Renderer:
 
         u = u[valid_mask]
         v = v[valid_mask]
+        colors = colors[valid_mask]  # Apply mask to colors
+
         # Initialize an empty image
-        img = torch.zeros((height, width, 3), device=pc.device)  # Assuming RGB image
-
-        # If pc has color information
-        colors = pc_colors[valid_mask]  # Shape: (N_valid, 3)
-
-        # Convert u and v to integer pixel indices
+        img = torch.zeros((height, width, 3), device=pc.device) 
         u_int = u.long()
         v_int = v.long()
-
-        # Assign colors to the image
         img[v_int, u_int] = colors
+
         if not self.viewer._render_track_checkbox.value:
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
+
         else:
             assert t is not None
             tracks_3d = self.tracks_3d[:, max(0, t - 20) : max(1, t)]
@@ -216,6 +228,7 @@ class Renderer:
             if not self.viewer._canonical_checkbox.value
             else None
         )
+        print(t)
         self.model.training = False
         #fg_only=True
         img = self.model.render(t, w2c[None], K[None], img_wh, )["img"][0]
