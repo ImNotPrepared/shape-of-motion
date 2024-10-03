@@ -24,8 +24,11 @@ class Renderer:
 
         self.model = model
         if self.model is None:
+          
           self.pc = init_pt_cld = np.load(pc_dir)#["data"]
+          
           self.num_frames = len(self.pc.keys())
+          print(pc_dir, self.pc.keys(), self.num_frames)
 
           if self.num_frames == 1:
             self.pc = np.load(pc_dir)["data"]
@@ -88,6 +91,76 @@ class Renderer:
         renderer.global_step = 7000
         renderer.epoch = 499
         return renderer
+    
+    @staticmethod
+    def project_pointcloud_to_image(pc_xyz, colors, K, w2c, H, W, device):
+        # pc_xyz: (N, 3)
+        # colors: (N, 3)
+        # K: (3, 3)
+        # w2c: (4, 4)
+        # H, W: image dimensions
+        # device: torch device
+
+        N = pc_xyz.shape[0]
+
+        # Step 1: Transform to homogeneous coordinates
+        ones = torch.ones((N, 1), device=device)
+        pc_xyz_h = torch.cat([pc_xyz, ones], dim=1)  # (N, 4)
+
+        # Step 2: Apply world-to-camera transformation
+        pc_xyz_cam = (w2c @ pc_xyz_h.T).T[:, :3]  # (N, 3)
+
+        x_cam = pc_xyz_cam[:, 0]
+        y_cam = pc_xyz_cam[:, 1]
+        z_cam = pc_xyz_cam[:, 2]
+
+        # Only keep points in front of the camera
+        valid_mask = z_cam > 0
+        x_cam = x_cam[valid_mask]
+        y_cam = y_cam[valid_mask]
+        z_cam = z_cam[valid_mask]
+        colors = colors[valid_mask]
+
+        # Step 3: Project onto image plane using intrinsic parameters
+        focal = K[0, 0]
+        u = (focal * x_cam / z_cam) + K[0, 2]
+        v = (focal * y_cam / z_cam) + K[1, 2]
+
+        # Convert to integer pixel indices
+        u_int = u.long()
+        v_int = v.long()
+
+        # Keep points within image bounds
+        in_bounds = (u_int >= 0) & (u_int < W) & (v_int >= 0) & (v_int < H)
+        u_int = u_int[in_bounds]
+        v_int = v_int[in_bounds]
+        z_cam = z_cam[in_bounds]
+        colors = colors[in_bounds]
+
+        # Compute linear pixel indices
+        pixel_indices = v_int * W + u_int  # Shape: (M,)
+
+        # Step 4: Handle depth ordering using sorting
+        sort_indices = torch.argsort(pixel_indices)
+        pixel_indices_sorted = pixel_indices[sort_indices]
+        z_cam_sorted = z_cam[sort_indices]
+        colors_sorted = colors[sort_indices]
+
+        # Find unique pixels and their first occurrence (closest point)
+        unique_pixels, first_occurrence_indices = torch.unique_consecutive(
+            pixel_indices_sorted, return_indices=True
+        )
+
+        # Step 5: Initialize depth buffer and image buffer
+        depth_buffer = torch.full((H * W,), float('inf'), device=device)
+        image_buffer = torch.zeros((H * W, 3), device=device)
+
+        # Update buffers with closest point data
+        depth_buffer[unique_pixels] = z_cam_sorted[first_occurrence_indices]
+        image_buffer[unique_pixels] = colors_sorted[first_occurrence_indices]
+        image = image_buffer.view(H, W, 3)
+
+        return image
 
     @torch.inference_mode()
     def render_fn_no_model(self, camera_state: CameraState, img_wh: tuple[int, int]):
@@ -111,53 +184,15 @@ class Renderer:
         )
         # [t]
         # Assuming self.pc is of shape [N, 6] with XYZRGB
-        try:  
-          pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
-        except:
-          pc = torch.tensor(self.pc).cuda()[:, :6].float()
+        #try:  
+        pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
+        #except:
+        # pc = torch.tensor(self.pc).cuda()[:, :6].float()
 
         pc_xyz = pc[:, :3]   # Shape: (N, 3)
         colors = pc[:, 3:6]  # Shape: (N, 3)
 
-        # Create homogeneous coordinates for XYZ
-        ones = torch.ones((pc_xyz.shape[0], 1), device=pc.device)
-        pc_homogeneous = torch.cat([pc_xyz, ones], dim=1)  # Shape: (N, 4)
-
-        # Transform points to camera coordinates
-        pc_camera = (w2c @ pc_homogeneous.T).T  # Shape: (N, 4)
-
-        # Discard the homogeneous coordinate
-        pc_camera = pc_camera[:, :3]  # Shape: (N, 3)
-
-        X_c = pc_camera[:, 0]
-        Y_c = pc_camera[:, 1]
-        Z_c = pc_camera[:, 2]
-
-        # Avoid division by zero
-        Z_c[Z_c == 0] = 1e-6
-
-        # Project onto image plane
-        x = X_c / Z_c
-        y = Y_c / Z_c
-
-        u = K[0, 0] * x + K[0, 2]
-        v = K[1, 1] * y + K[1, 2]
-
-        # Image dimensions
-        width, height = W, H
-
-        # Validity mask
-        valid_mask = (Z_c > 0) & (u >= 0) & (u < width) & (v >= 0) & (v < height)
-
-        u = u[valid_mask]
-        v = v[valid_mask]
-        colors = colors[valid_mask]  # Apply mask to colors
-
-        # Initialize an empty image
-        img = torch.zeros((height, width, 3), device=pc.device) 
-        u_int = u.long()
-        v_int = v.long()
-        img[v_int, u_int] = colors
+        img = self.project_pointcloud_to_image(pc_xyz, colors, K, w2c, H, W, 'cuda')
 
         if not self.viewer._render_track_checkbox.value:
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)

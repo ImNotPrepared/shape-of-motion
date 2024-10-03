@@ -66,7 +66,6 @@ class SceneModel(nn.Module):
         coefs = self.fg.get_coefs()  # (G, K)
         if inds is not None:
             coefs = coefs[inds]
-        # 8 torch.Size([16914, 10])
         transfms = self.motion_bases.compute_transforms(ts, coefs)  # (G, B, 3, 4)
         return transfms
 
@@ -128,12 +127,6 @@ class SceneModel(nn.Module):
             scales = torch.cat([scales, self.bg.get_scales()], dim=0).contiguous()
         return scales
 
-    def get_features_all(self) -> torch.Tensor:
-        features = self.fg.get_features()
-        if self.bg is not None:
-            features = torch.cat([features, self.bg.get_features()], dim=0).contiguous()
-        return features
-
     def get_opacities_all(self) -> torch.Tensor:
         """
         :returns colors: (G, 3), scales: (G, 3), opacities: (G, 1)
@@ -144,6 +137,12 @@ class SceneModel(nn.Module):
                 [opacities, self.bg.get_opacities()], dim=0
             ).contiguous()
         return opacities
+
+    def get_features_all(self) -> torch.Tensor:
+        features = self.fg.get_features()
+        if self.bg is not None:
+            features = torch.cat([features, self.bg.get_features()], dim=0).contiguous()
+        return features
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix=""):
@@ -160,17 +159,6 @@ class SceneModel(nn.Module):
         )
         Ks = state_dict[f"{prefix}Ks"]
         w2cs = state_dict[f"{prefix}w2cs"]
-        '''K = torch.rand(3, 3)
-
-        # Repeat 111 to shape [111, 3, 3]
-        Ks = K.repeat(111, 1, 1)
-        w2cs = torch.rand(4, 4)
-        w2cs = w2cs.repeat(111, 1, 1)
-        id_rot = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-        num_frames, num_bases = motion_bases.num_frames, motion_bases.num_bases
-        init_rots = id_rot.reshape(1, 1, 6).repeat(num_bases, num_frames, 1)
-        init_ts = torch.zeros(num_bases, num_frames, 3)
-        motion_bases = MotionBases(init_rots, init_ts)'''
         return SceneModel(Ks, w2cs, fg, motion_bases, bg)
 
     def render(
@@ -226,7 +214,7 @@ class SceneModel(nn.Module):
             bg_color = torch.full((C, D), bg_color, device=device)
         assert isinstance(bg_color, torch.Tensor)
 
-        mode = ["RGB"]
+        mode = "RGB"
         ds_expected = {"img": D}
 
         ### ADDED FEATURE
@@ -304,8 +292,9 @@ class SceneModel(nn.Module):
             width=W,
             height=H,
             packed=False,
-            render_mode="RGB",
+            render_mode=mode,
         )
+
 
         '''
         render_features, alphas, info = rasterization(
@@ -323,7 +312,7 @@ class SceneModel(nn.Module):
             render_mode=mode[1],
         )
         '''
-
+        
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:
             self._current_xys = info["means2d"]

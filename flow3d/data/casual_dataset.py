@@ -116,6 +116,10 @@ class CasualDataset(BaseDataset):
 
         self.img_dir = f"{root_dir}/{image_type}/{res}/{seq_name}"
         self.img_ext = os.path.splitext(os.listdir(self.img_dir)[0])[1]
+
+        self.feat_dir = f"{root_dir}/{image_type}/{res}/{seq_name}"
+        self.feat_ext = os.path.splitext(os.listdir(self.feat_dir)[0])[1]
+
         self.depth_dir = f"{root_dir}/{depth_type}/{res}/{seq_name}"
         self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
@@ -279,6 +283,12 @@ class CasualDataset(BaseDataset):
         img = cast(torch.Tensor, self.imgs[index])
         return img
 
+    def get_feat(self, index) -> torch.Tensor:
+        if self.feats[index] is None:
+            self.feats[index] = self.load_feat(index)
+        feat = cast(torch.Tensor, self.feats[index])
+        return feat
+
     def get_mask(self, index) -> torch.Tensor:
         if self.masks[index] is None:
             self.masks[index] = self.load_mask(index)
@@ -294,6 +304,14 @@ class CasualDataset(BaseDataset):
     def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}{self.img_ext}"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
+
+    def load_feat(self, index) -> torch.Tensor:
+        path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
+        #feat
+        #feature_root_path='/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512/' #undist_cam00_670/000000.npy'
+        #feature_path = feature_root_path+fn 
+        dinov2_feature = torch.tensor(np.load(path))#.permute(2, 0, 1)
+        return dinov2_feature
 
     def load_mask(self, index) -> torch.Tensor:
 
@@ -331,7 +349,7 @@ class CasualDataset(BaseDataset):
 
     def load_depth(self, index) -> torch.Tensor:
         #  load_da2_depth load_duster_depth load_org_depth
-        return self.load_da2_depth(index)
+        return self.load_duster_depth(index)
 
     def load_duster_depth(self, index) -> torch.Tensor:
 # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
@@ -432,15 +450,21 @@ class CasualDataset(BaseDataset):
                 tracks_2d = tracks_2d[sel_idcs]
             cur_num += tracks_2d.shape[0]
             img = self.get_image(q_idx)
+            feat = self.get_feat(q_idx)
+
+
             tidx = target_idcs.index(q_idx)
+
+
             tracks_tuple = get_tracks_3d_for_query_frame(
-                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws
+                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws, feat
             )
+  
             tracks_all_queries.append(tracks_tuple)
-        tracks_3d, colors, visibles, invisibles, confidences = map(
+        tracks_3d, colors, feats, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
         )
-        return tracks_3d, visibles, invisibles, confidences, colors
+        return tracks_3d, visibles, invisibles, confidences, colors, feats
 
 
 

@@ -74,6 +74,7 @@ def get_tracks_3d_for_query_frame(
     masks: torch.Tensor,
     inv_Ks: torch.Tensor,
     c2ws: torch.Tensor,
+    query_feat: torch.Tensor | None = None,
 ):
     """
     :param query_index (int)
@@ -93,6 +94,8 @@ def get_tracks_3d_for_query_frame(
     """
     T, H, W = depths.shape
     query_img = query_img[None].permute(0, 3, 1, 2)  # (1, 3, H, W)
+
+
     tracks_2d = tracks_2d.swapaxes(0, 1)  # (T, N, 4)
     tracks_2d, occs, dists = (
         tracks_2d[..., :2],
@@ -159,13 +162,33 @@ def get_tracks_3d_for_query_frame(
         align_corners=True,
         padding_mode="border",
     )[0, :, 0].T
-    return (
-        tracks_3d[:, valid].swapdims(0, 1),
-        track_colors[valid],
-        visibles[:, valid].swapdims(0, 1),
-        invisibles[:, valid].swapdims(0, 1),
-        confidences[:, valid].swapdims(0, 1),
-    )
+
+    if query_feat:
+      query_feat = query_feat[None].permute(0, 3, 1, 2) 
+      track_feats = F.grid_sample(
+          query_feat,
+          normalize_coords(tracks_2d[query_index : query_index + 1, None], H, W),
+          align_corners=True,
+          padding_mode="border",
+      )[0, :, 0].T
+
+      return (
+          tracks_3d[:, valid].swapdims(0, 1),
+          track_colors[valid],
+          track_feats[valid],
+          visibles[:, valid].swapdims(0, 1),
+          invisibles[:, valid].swapdims(0, 1),
+          confidences[:, valid].swapdims(0, 1),
+      )
+
+    else:
+      return (
+          tracks_3d[:, valid].swapdims(0, 1),
+          track_colors[valid],
+          visibles[:, valid].swapdims(0, 1),
+          invisibles[:, valid].swapdims(0, 1),
+          confidences[:, valid].swapdims(0, 1),
+      )
 
 
 def _get_padding(x, k, stride, padding, same: bool):

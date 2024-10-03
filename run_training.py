@@ -64,7 +64,7 @@ class TrainConfig:
     loss: LossesConfig
     optim: OptimizerConfig
     num_fg: int = 100_000
-    num_bg: int = 100_000
+    num_bg: int = 0 ### changed to 0
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int | None = None
@@ -274,10 +274,14 @@ def initialize_and_checkpoint_model(
     fg_state_dict_fused[prefix+'motion_coefs'] = to_init
 
     bg_state_dict_fused = {} 
-    for key in bg_params_fuse[0].params.keys():
-        bg_state_dict_fused[prefix+key] = torch.cat(
-            [bg_params.params[key] for bg_params in bg_params_fuse], dim=0
-        )
+
+    try:
+      for key in bg_params_fuse[0].params.keys():
+          bg_state_dict_fused[prefix+key] = torch.cat(
+              [bg_params.params[key] for bg_params in bg_params_fuse], dim=0
+          )
+    except:
+      print('NO_BG')
 
     #fg_params_fuse[0].scene_center
     #for key in ['scene_center', 'scene_scale']:
@@ -367,7 +371,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_da2_with_new_scale_shift_2'
+    work_dir = './output_duster_feature_rendering'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
