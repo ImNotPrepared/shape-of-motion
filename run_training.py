@@ -366,7 +366,6 @@ def backup_code(work_dir):
 if __name__ == "__main__":
     import wandb 
     import argparse
-    import wandb
     import tyro
 
     wandb.init()  

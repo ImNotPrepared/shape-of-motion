@@ -161,6 +161,8 @@ class Trainer:
         img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
         return (img.cpu().numpy() * 255.0).astype(np.uint8)
 
+
+      
     def train_step(self, batch):
         if self.viewer is not None:
             while self.viewer.state.status == "paused":
@@ -168,8 +170,9 @@ class Trainer:
             self.viewer.lock.acquire()
 
         loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
-
-        self.stats = stats
+        print('NUM_of_Gaussians', self.model.fg.num_gaussians)
+        self.stats = stats 
+        wandb.log(self.stats)
         self.num_rays_per_sec=num_rays_per_sec
         if loss.isnan():
             guru.info(f"Loss is NaN at step {self.global_step}!!")
@@ -343,6 +346,7 @@ class Trainer:
             )
             for key in rendered_all[0]
         }
+
         bg_colors = torch.cat(bg_colors, dim=0)
         bg_feats = torch.cat(bg_feats, dim=0)
 
@@ -399,8 +403,11 @@ class Trainer:
         #torch.Size([32, 288, 512, 3]) torch.Size([32, 288, 512, 3])
         #torch.Size([9216, 512, 32]) torch.Size([32, 288, 512, 32])
         #print(rendered_imgs.shape, imgs.shape)
-        #print(rendered_feats.shape, feats.shape)
+        #print(rendered_feats, feats)
+
+
         feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
+        loss += feat_loss * self.losses_cfg.w_feat
 
         ###
         ### DEBUGing
@@ -410,7 +417,7 @@ class Trainer:
         #print(rendered_imgs.shape)
         loss += rgb_loss * self.losses_cfg.w_rgb
 
-        loss += feat_loss * self.losses_cfg.w_feat
+
         # Mask loss.
         if not self.model.has_bg:
             mask_loss = F.mse_loss(rendered_all["acc"], masks[..., None])  # type: ignore
@@ -548,6 +555,7 @@ class Trainer:
         stats = {
             "train/loss": loss.item(),
             "train/rgb_loss": rgb_loss.item(),
+            "train/feat_loss": feat_loss.item(),
             "train/mask_loss": mask_loss.item(),
             "train/depth_loss": depth_loss.item(),
             "train/depth_gradient_loss": depth_gradient_loss.item(),

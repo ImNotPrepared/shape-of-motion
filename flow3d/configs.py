@@ -62,7 +62,7 @@ class OptimizerConfig:
     densify_xys_grad_threshold: float = 0.0002
     densify_scale_threshold: float = 0.01
     densify_screen_threshold: float = 0.05
-    stop_densify_steps: int = 15000
+    stop_densify_steps: int = 1000#15000
     ### Cull.
     cull_opacity_threshold: float = 0.1
     cull_scale_threshold: float = 0.5

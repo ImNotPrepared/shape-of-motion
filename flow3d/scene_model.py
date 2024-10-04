@@ -314,15 +314,20 @@ class SceneModel(nn.Module):
             packed=False,
             render_mode=mode,
         )
+        # print(bg_color.shape)
         ## colors: torch.Size([1, 288, 512, 16]) [4*(3+1)]        torch.Size([181670, 15])
         # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape)
+        
+        
+        #if isinstance(bg_color, float):
+        bg_feat = torch.ones((1, 32), device=device)
         render_feats, _, _ = rasterization(
             means=means,
             quats=quats,
             scales=scales,
             opacities=opacities,
             colors=feats_override,
-            #backgrounds=single_bg_color,
+            backgrounds=bg_feat,
             viewmats=w2cs,  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=W,
@@ -359,13 +364,14 @@ class SceneModel(nn.Module):
                 x = x.reshape(C, H, W, B, 3)
             out_dict[name] = x
 
-        outputs_feats = render_feats# torch.split(render_feats, list(ds_extra_expected.values()), dim=-1)
-        #print(outputs_feats.shape)
+        outputs_feats = render_feats #torch.split(render_feats, list(ds_extra_expected.values()), dim=-1)
+        # print(render_feats.shape, render_colors.shape, 'ssssshape')
+        # torch.Size([1, 288, 512, 32]) torch.Size([1, 288, 512, 16]) ssssshape
         for i, (name, dim) in enumerate(ds_extra_expected.items()):
-            x = outputs_feats[i]
+            x = outputs_feats
             assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
-            if name == "tracks_3d":
-                x = x.reshape(C, H, W, B, 3)
+            # print(x.shape)
+            # torch.Size([1, 288, 512, 32])
             out_dict[name] = x
 
         out_dict["acc"] = alphas
