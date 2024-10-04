@@ -8,6 +8,7 @@ class FGLRConfig:
     scales: float = 5e-3
     quats: float = 1e-3
     colors: float = 1e-2
+    feats: float = 1e-3
     motion_coefs: float = 1e-2
 
 
@@ -36,6 +37,7 @@ class SceneLRConfig:
 @dataclass
 class LossesConfig:
     w_rgb: float = 1.0
+    w_feat: float = 0.01
     w_depth_reg: float = 0.5
     w_depth_const: float = 0.1
     w_depth_grad: float = 1

@@ -135,6 +135,7 @@ class CasualDataset(BaseDataset):
         print(self.start, self.end)
 
         self.imgs: list[torch.Tensor | None] = [None for _ in self.frame_names]
+        self.feats: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.depths: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.masks: list[torch.Tensor | None] = [None for _ in self.frame_names]
 
@@ -306,10 +307,19 @@ class CasualDataset(BaseDataset):
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
     def load_feat(self, index) -> torch.Tensor:
+        # path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
         path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
+        
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/')
+        path = path.replace('toy_512_', 'undist_cam0')
+        path = path.replace('jpg', 'npy')
+        # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg
+        # 
+        # /data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/undist_cam02/00000.npy
         #feat
         #feature_root_path='/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512/' #undist_cam00_670/000000.npy'
         #feature_path = feature_root_path+fn 
+        #print(path)
         dinov2_feature = torch.tensor(np.load(path))#.permute(2, 0, 1)
         return dinov2_feature
 
@@ -585,6 +595,7 @@ class CasualDataset(BaseDataset):
             "Ks": self.Ks[index],
             # (H, W, 3).
             "imgs": self.get_image(index),
+            "feats": self.get_feat(index),
             "depths": self.get_depth(index),
         }
         tri_mask = self.get_mask(index)

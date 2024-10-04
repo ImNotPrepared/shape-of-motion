@@ -246,6 +246,8 @@ class Trainer:
         # Concatenate images (B, H, W, 3).
         imgs = torch.cat([b["imgs"] for b in batch], dim=0)  # (sum of B across batches, H, W, 3)
 
+        feats = torch.cat([b["feats"] for b in batch], dim=0) 
+
         # Concatenate valid masks or create ones where masks are missing (B, H, W).
         valid_masks = torch.cat([b.get("valid_masks", torch.ones_like(b["imgs"][..., 0])) for b in batch], dim=0)  # (sum of B across batches, H, W)
 
@@ -258,7 +260,7 @@ class Trainer:
         query_tracks_2d = [track for b in batch for track in b["query_tracks_2d"]]
         target_ts = [ts for b in batch for ts in b["target_ts"]]
 
-        print(target_ts)
+        #print(target_ts)
         target_w2cs = [w2c for b in batch for w2c in b["target_w2cs"]]
         target_Ks = [K for b in batch for K in b["target_Ks"]]
         target_tracks_2d = [track for b in batch for track in b["target_tracks_2d"]]
@@ -291,12 +293,14 @@ class Trainer:
         loss = 0.0
 
         bg_colors = []
+        bg_feats = []
         rendered_all = []
         self._batched_xys = []
         self._batched_radii = []
         self._batched_img_wh = []
         for i in range(B):
             bg_color = torch.ones(1, 3, device=device)
+            bg_feat =  torch.ones(1, 32, device=device)
             rendered = self.model.render(
                 ts[i].item(),
                 w2cs[None, i],
@@ -310,9 +314,11 @@ class Trainer:
                 target_means=target_mean_list[i].transpose(0, 1),
                 return_depth=True,
                 return_mask=self.model.has_bg,
+                fg_only=not self.model.has_bg
             )
             rendered_all.append(rendered)
             bg_colors.append(bg_color)
+            bg_feats.append(bg_feat)
             if (
                 self.model._current_xys is not None
                 and self.model._current_radii is not None
@@ -327,6 +333,8 @@ class Trainer:
         num_rays_per_sec = num_rays_per_step / (time.time() - _tic)
 
         # (B, H, W, N, *).
+        # print(rendered_all[0].keys())
+        # dict_keys(['img', 'tracks_3d', 'depth', 'feat', 'acc'])
         rendered_all = {
             key: (
                 torch.cat([out_dict[key] for out_dict in rendered_all], dim=0)
@@ -336,6 +344,7 @@ class Trainer:
             for key in rendered_all[0]
         }
         bg_colors = torch.cat(bg_colors, dim=0)
+        bg_feats = torch.cat(bg_feats, dim=0)
 
         # Compute losses.
         # (B * N).
@@ -345,10 +354,21 @@ class Trainer:
                 imgs * masks[..., None]
                 + (1.0 - masks[..., None]) * bg_colors[:, None, None]
             )
+
+            feats = (
+                feats * masks[..., None]
+                + (1.0 - masks[..., None]) * bg_feats[:, None, None]
+            )
+
         else:
             imgs = (
                 imgs * valid_masks[..., None]
                 + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+            )
+
+            feats = (
+                feats * valid_masks[..., None]
+                + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
             )
         # (P_all, 2).
         tracks_2d = torch.cat([x.reshape(-1, 2) for x in target_tracks_2d], dim=0)
@@ -359,14 +379,28 @@ class Trainer:
 
         # RGB loss.
         rendered_imgs = cast(torch.Tensor, rendered_all["img"])
+
+        rendered_feats = cast(torch.Tensor, rendered_all["feat"])
+
         if self.model.has_bg:
             rendered_imgs = (
                 rendered_imgs * valid_masks[..., None]
                 + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
             )
+
+            rendered_feats = (
+                rendered_feats * valid_masks[..., None]
+                + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+            )
+
         rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
             1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
         )
+        #torch.Size([32, 288, 512, 3]) torch.Size([32, 288, 512, 3])
+        #torch.Size([9216, 512, 32]) torch.Size([32, 288, 512, 32])
+        #print(rendered_imgs.shape, imgs.shape)
+        #print(rendered_feats.shape, feats.shape)
+        feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
 
         ###
         ### DEBUGing
@@ -376,6 +410,7 @@ class Trainer:
         #print(rendered_imgs.shape)
         loss += rgb_loss * self.losses_cfg.w_rgb
 
+        loss += feat_loss * self.losses_cfg.w_feat
         # Mask loss.
         if not self.model.has_bg:
             mask_loss = F.mse_loss(rendered_all["acc"], masks[..., None])  # type: ignore

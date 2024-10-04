@@ -163,7 +163,16 @@ def get_tracks_3d_for_query_frame(
         padding_mode="border",
     )[0, :, 0].T
 
-    if query_feat:
+    if query_feat is None:
+      return (
+          tracks_3d[:, valid].swapdims(0, 1),
+          track_colors[valid],
+          visibles[:, valid].swapdims(0, 1),
+          invisibles[:, valid].swapdims(0, 1),
+          confidences[:, valid].swapdims(0, 1),
+      )
+
+    else:
       query_feat = query_feat[None].permute(0, 3, 1, 2) 
       track_feats = F.grid_sample(
           query_feat,
@@ -180,16 +189,6 @@ def get_tracks_3d_for_query_frame(
           invisibles[:, valid].swapdims(0, 1),
           confidences[:, valid].swapdims(0, 1),
       )
-
-    else:
-      return (
-          tracks_3d[:, valid].swapdims(0, 1),
-          track_colors[valid],
-          visibles[:, valid].swapdims(0, 1),
-          invisibles[:, valid].swapdims(0, 1),
-          confidences[:, valid].swapdims(0, 1),
-      )
-
 
 def _get_padding(x, k, stride, padding, same: bool):
     if same:

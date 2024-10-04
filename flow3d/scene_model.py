@@ -138,7 +138,7 @@ class SceneModel(nn.Module):
             ).contiguous()
         return opacities
 
-    def get_features_all(self) -> torch.Tensor:
+    def get_feats_all(self) -> torch.Tensor:
         features = self.fg.get_features()
         if self.bg is not None:
             features = torch.cat([features, self.bg.get_features()], dim=0).contiguous()
@@ -177,11 +177,12 @@ class SceneModel(nn.Module):
         quats: torch.Tensor | None = None,
         target_means: torch.Tensor | None = None,
         return_color: bool = True,
+        return_feat: bool = True,
         return_depth: bool = False,
         return_mask: bool = False,
         fg_only: bool = False,
         filter_mask: torch.Tensor | None = None,
-        features_override: torch.Tensor | None = None, ## added
+        feats_override: torch.Tensor | None = None,
     ) -> dict:
         device = w2cs.device
         C = w2cs.shape[0]
@@ -205,6 +206,14 @@ class SceneModel(nn.Module):
             else:
                 colors_override = torch.zeros(N, 0, device=device)
 
+        if feats_override is None:
+            if return_feat:
+                feats_override = (
+                    self.fg.get_feats() if fg_only else self.get_feats_all()
+                )
+            else:
+                feats_override = torch.zeros(N, 0, device=device)
+        #print(colors_override.shape, feats_override.shape)
         D = colors_override.shape[-1]
 
         scales = self.fg.get_scales() if fg_only else self.get_scales_all()
@@ -246,19 +255,27 @@ class SceneModel(nn.Module):
             ds_expected["mask"] = 1
 
         B = 0
+
         if target_ts is not None:
             B = target_ts.shape[0]
             if target_means is None:
-                target_means, _ = pose_fnc(target_ts)  # [G, B, 3]
+                target_means, _ = pose_fnc(target_ts)  # [G, B, 3] 4 3 1
             if target_w2cs is not None:
                 target_means = torch.einsum(
                     "bij,pbj->pbi",
                     target_w2cs[:, :3],
                     F.pad(target_means, (0, 1), value=1.0),
                 )
+
             track_3d_vals = target_means.flatten(-2)  # (G, B * 3)
+            
             d_track = track_3d_vals.shape[-1]
+
             colors_override = torch.cat([colors_override, track_3d_vals], dim=-1)
+            #### (G, 3) + (G, 4)
+            single_bg_color = bg_color
+
+
             bg_color = torch.cat(
                 [bg_color, torch.zeros(C, track_3d_vals.shape[-1], device=device)],
                 dim=-1,
@@ -267,7 +284,7 @@ class SceneModel(nn.Module):
 
         assert colors_override.shape[-1] == sum(ds_expected.values())
         assert bg_color.shape[-1] == sum(ds_expected.values())
-
+        # print('color-feat shape_1', fg_only, colors_override.shape, feats_override.shape)
         if return_depth:
             mode = "RGB+ED"
             ds_expected["depth"] = 1
@@ -279,7 +296,10 @@ class SceneModel(nn.Module):
             scales = scales[filter_mask]
             opacities = opacities[filter_mask]
             colors_override = colors_override[filter_mask]
+            feats_override = feats_override[filter_mask]
 
+        # print('color-feat shape_2', colors_override.shape, means.shape)
+        # shape_2 torch.Size([181779, 15])
         render_colors, alphas, info = rasterization(
             means=means,
             quats=quats,
@@ -294,24 +314,23 @@ class SceneModel(nn.Module):
             packed=False,
             render_mode=mode,
         )
-
-
-        '''
-        render_features, alphas, info = rasterization(
+        ## colors: torch.Size([1, 288, 512, 16]) [4*(3+1)]        torch.Size([181670, 15])
+        # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape)
+        render_feats, _, _ = rasterization(
             means=means,
             quats=quats,
             scales=scales,
             opacities=opacities,
-            colors=features_override,
-            backgrounds=bg_color,
+            colors=feats_override,
+            #backgrounds=single_bg_color,
             viewmats=w2cs,  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=W,
             height=H,
             packed=False,
-            render_mode=mode[1],
+            render_mode='RGB',
         )
-        '''
+        ds_extra_expected = {"feat": 32}    
         
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:
@@ -322,14 +341,32 @@ class SceneModel(nn.Module):
             # torch.no_grad context.
             self._current_xys.retain_grad()
 
+        # print('mode+ds',  mode, sum(ds_expected.values()), B)
         assert render_colors.shape[-1] == sum(ds_expected.values())
-        outputs = torch.split(render_colors, list(ds_expected.values()), dim=-1)
+        outputs = torch.split(render_colors, list(ds_expected.values()), dim=-1) ### it is a cated [3, 1]
+        # print(len(outputs), outputs[0].shape, outputs[1].shape, outputs[2].shape,)
         out_dict = {}
         for i, (name, dim) in enumerate(ds_expected.items()):
             x = outputs[i]
+            '''
+            img torch.Size([1, 288, 512, 3])
+            tracks_3d torch.Size([1, 288, 512, 12])
+            depth torch.Size([1, 288, 512, 1])
+            print(name, x.shape)
+            '''
             assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
             if name == "tracks_3d":
                 x = x.reshape(C, H, W, B, 3)
             out_dict[name] = x
+
+        outputs_feats = render_feats# torch.split(render_feats, list(ds_extra_expected.values()), dim=-1)
+        #print(outputs_feats.shape)
+        for i, (name, dim) in enumerate(ds_extra_expected.items()):
+            x = outputs_feats[i]
+            assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
+            if name == "tracks_3d":
+                x = x.reshape(C, H, W, B, 3)
+            out_dict[name] = x
+
         out_dict["acc"] = alphas
         return out_dict

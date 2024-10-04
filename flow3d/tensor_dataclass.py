@@ -66,6 +66,7 @@ class TrackObservations(TensorDataclass):
     invisibles: torch.Tensor
     confidences: torch.Tensor
     colors: torch.Tensor
+    feats: torch.Tensor | None = None
 
     def check_sizes(self) -> bool:
         dims = self.xyz.shape[:-1]

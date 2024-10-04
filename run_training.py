@@ -222,7 +222,7 @@ def initialize_and_checkpoint_model(
         w2cs = train_dataset.get_w2cs().to(device)
 
 
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1000)
+        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=7)
         #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
@@ -295,7 +295,7 @@ def initialize_and_checkpoint_model(
 
     fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
     motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
+    bg_params_fused = None#GaussianParams.init_from_state_dict(bg_state_dict_fused)
 
 
     #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params

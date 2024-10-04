@@ -54,6 +54,7 @@ def init_fg_from_tracks_3d(
 
     # Initialize gaussian colors.
     colors = torch.logit(tracks_3d.colors)
+    feats = torch.logit(tracks_3d.feats)
     # Initialize gaussian scales: find the average of the three nearest
     # neighbors in the first frame for each point and use that as the
     # scale.
@@ -100,7 +101,8 @@ def init_fg_from_tracks_3d(
     #dists2centers = torch.norm(means_cano[:, None] - sampled_centers, dim=-1)
     #motion_coefs = 10 * torch.exp(-dists2centers)
     #motion_coefs = 
-    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
+    print('-'*50 + 'Initializing Gaussians' + '-'*50)
+    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
     return gaussians
 
