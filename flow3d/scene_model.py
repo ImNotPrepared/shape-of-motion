@@ -139,9 +139,9 @@ class SceneModel(nn.Module):
         return opacities
 
     def get_feats_all(self) -> torch.Tensor:
-        features = self.fg.get_features()
+        features = self.fg.get_feats()
         if self.bg is not None:
-            features = torch.cat([features, self.bg.get_features()], dim=0).contiguous()
+            features = torch.cat([features, self.bg.get_feats()], dim=0).contiguous()
         return features
 
     @staticmethod
@@ -319,23 +319,7 @@ class SceneModel(nn.Module):
         # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape)
         
         
-        #if isinstance(bg_color, float):
-        bg_feat = torch.ones((1, 32), device=device)
-        render_feats, _, _ = rasterization(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=feats_override,
-            backgrounds=bg_feat,
-            viewmats=w2cs,  # [C, 4, 4]
-            Ks=Ks,  # [C, 3, 3]
-            width=W,
-            height=H,
-            packed=False,
-            render_mode='RGB',
-        )
-        ds_extra_expected = {"feat": 32}    
+
         
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:
@@ -364,6 +348,26 @@ class SceneModel(nn.Module):
                 x = x.reshape(C, H, W, B, 3)
             out_dict[name] = x
 
+
+
+        #if isinstance(bg_color, float):
+        '''bg_feat = torch.ones((1, 32), device=device)
+        render_feats, _, _ = rasterization(
+            means=means,
+            quats=quats,
+            scales=scales,
+            opacities=opacities,
+            colors=feats_override,
+            backgrounds=bg_feat,
+            viewmats=w2cs,  # [C, 4, 4]
+            Ks=Ks,  # [C, 3, 3]
+            width=W,
+            height=H,
+            packed=False,
+            render_mode='RGB',
+        )
+        ds_extra_expected = {"feat": 32}    
+
         outputs_feats = render_feats #torch.split(render_feats, list(ds_extra_expected.values()), dim=-1)
         # print(render_feats.shape, render_colors.shape, 'ssssshape')
         # torch.Size([1, 288, 512, 32]) torch.Size([1, 288, 512, 16]) ssssshape
@@ -372,7 +376,7 @@ class SceneModel(nn.Module):
             assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
             # print(x.shape)
             # torch.Size([1, 288, 512, 32])
-            out_dict[name] = x
+            out_dict[name] = x'''
 
         out_dict["acc"] = alphas
         return out_dict

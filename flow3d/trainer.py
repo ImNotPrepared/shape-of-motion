@@ -383,19 +383,23 @@ class Trainer:
 
         # RGB loss.
         rendered_imgs = cast(torch.Tensor, rendered_all["img"])
-
-        rendered_feats = cast(torch.Tensor, rendered_all["feat"])
-
         if self.model.has_bg:
             rendered_imgs = (
                 rendered_imgs * valid_masks[..., None]
                 + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
             )
 
-            rendered_feats = (
-                rendered_feats * valid_masks[..., None]
-                + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
-            )
+        if 'feat' in rendered_all.keys():
+          rendered_feats = cast(torch.Tensor, rendered_all["feat"])
+          if self.model.has_bg:
+              rendered_feats = (
+                  rendered_feats * valid_masks[..., None]
+                  + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+              )
+              feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
+              loss += feat_loss * self.losses_cfg.w_feat
+
+
 
         rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
             1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
@@ -404,11 +408,6 @@ class Trainer:
         #torch.Size([9216, 512, 32]) torch.Size([32, 288, 512, 32])
         #print(rendered_imgs.shape, imgs.shape)
         #print(rendered_feats, feats)
-
-
-        feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
-        loss += feat_loss * self.losses_cfg.w_feat
-
         ###
         ### DEBUGing
         ###
@@ -552,21 +551,37 @@ class Trainer:
         loss += self.losses_cfg.w_z_accel * z_accel_loss
 
         # Prepare stats for logging.
-        stats = {
-            "train/loss": loss.item(),
-            "train/rgb_loss": rgb_loss.item(),
-            "train/feat_loss": feat_loss.item(),
-            "train/mask_loss": mask_loss.item(),
-            "train/depth_loss": depth_loss.item(),
-            "train/depth_gradient_loss": depth_gradient_loss.item(),
-            "train/mapped_depth_loss": mapped_depth_loss.item(),
-            "train/track_2d_loss": track_2d_loss.item(),
-            "train/small_accel_loss": small_accel_loss.item(),
-            "train/z_acc_loss": z_accel_loss.item(),
-            "train/num_gaussians": self.model.num_gaussians,
-            "train/num_fg_gaussians": self.model.num_fg_gaussians,
-            "train/num_bg_gaussians": self.model.num_bg_gaussians,
-        }
+        try:
+          stats = {
+              "train/loss": loss.item(),
+              "train/rgb_loss": rgb_loss.item(),
+              "train/feat_loss": feat_loss.item(),
+              "train/mask_loss": mask_loss.item(),
+              "train/depth_loss": depth_loss.item(),
+              "train/depth_gradient_loss": depth_gradient_loss.item(),
+              "train/mapped_depth_loss": mapped_depth_loss.item(),
+              "train/track_2d_loss": track_2d_loss.item(),
+              "train/small_accel_loss": small_accel_loss.item(),
+              "train/z_acc_loss": z_accel_loss.item(),
+              "train/num_gaussians": self.model.num_gaussians,
+              "train/num_fg_gaussians": self.model.num_fg_gaussians,
+              "train/num_bg_gaussians": self.model.num_bg_gaussians,
+          }
+        except:
+          stats = {
+              "train/loss": loss.item(),
+              "train/rgb_loss": rgb_loss.item(),
+              "train/mask_loss": mask_loss.item(),
+              "train/depth_loss": depth_loss.item(),
+              "train/depth_gradient_loss": depth_gradient_loss.item(),
+              "train/mapped_depth_loss": mapped_depth_loss.item(),
+              "train/track_2d_loss": track_2d_loss.item(),
+              "train/small_accel_loss": small_accel_loss.item(),
+              "train/z_acc_loss": z_accel_loss.item(),
+              "train/num_gaussians": self.model.num_gaussians,
+              "train/num_fg_gaussians": self.model.num_fg_gaussians,
+              "train/num_bg_gaussians": self.model.num_bg_gaussians,
+          }          
 
         # Compute metrics.
         with torch.no_grad():
@@ -786,7 +801,10 @@ class Trainer:
         # Reset gaussian opacities.
         new_val = torch.logit(torch.tensor(0.8 * self.optim_cfg.cull_opacity_threshold))
         for part in ["fg", "bg"]:
-            part_params = getattr(self.model, part).reset_opacities(new_val)
+            try:
+              part_params = getattr(self.model, part).reset_opacities(new_val)
+            except:
+              continue
             # Modify optimizer states by new assignment.
             for param_name, new_params in part_params.items():
                 full_param_name = f"{part}.params.{param_name}"
