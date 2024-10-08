@@ -19,6 +19,7 @@ class BGLRConfig:
     scales: float = 5e-3
     quats: float = 1e-3
     colors: float = 1e-2
+    feats: float = 1e-3
 
 
 @dataclass
@@ -67,3 +68,5 @@ class OptimizerConfig:
     cull_opacity_threshold: float = 0.1
     cull_scale_threshold: float = 0.5
     cull_screen_threshold: float = 0.15
+    ##
+    #feat: float = 0.01

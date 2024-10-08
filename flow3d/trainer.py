@@ -120,6 +120,7 @@ class Trainer:
         state_dict = ckpt["model"]
         model = SceneModel.init_from_state_dict(state_dict)
         model = model.to(device)
+        
         trainer = Trainer(model, device, *args, **kwargs)
         if "optimizers" in ckpt:
             trainer.load_checkpoint_optimizers(ckpt["optimizers"])

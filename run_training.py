@@ -63,8 +63,8 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 100_000
-    num_bg: int = 0 ### changed to 0
+    num_fg: int = 10_000
+    num_bg: int = 50_000 ### changed to 0 # 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int | None = None
@@ -222,7 +222,7 @@ def initialize_and_checkpoint_model(
         w2cs = train_dataset.get_w2cs().to(device)
 
 
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=7)
+        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1000)
         #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
@@ -295,12 +295,12 @@ def initialize_and_checkpoint_model(
 
     fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
     motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-    bg_params_fused = None#GaussianParams.init_from_state_dict(bg_state_dict_fused)
-
+    bg_params_fused = None
+    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
 
     #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
     #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
-    #bg_params_fuse = torch.cat(bg_params_fuse, dim=0)  # Flatten bg_params
+
 
     model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)
     print('SANITY_CCCCHECK', model.fg.get_coefs().shape, model.fg.get_colors().shape)

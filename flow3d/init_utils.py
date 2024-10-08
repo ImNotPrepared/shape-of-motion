@@ -54,6 +54,7 @@ def init_fg_from_tracks_3d(
 
     # Initialize gaussian colors.
     colors = torch.logit(tracks_3d.colors)
+    print('*-*'*50, colors.shape)
     feats = (tracks_3d.feats)
     # Initialize gaussian scales: find the average of the three nearest
     # neighbors in the first frame for each point and use that as the
@@ -120,7 +121,11 @@ def init_bg(
     bg_min_scale = bg_points_centered.quantile(0.05, dim=0)
     bg_max_scale = bg_points_centered.quantile(0.95, dim=0)
     bg_scene_scale = torch.max(bg_max_scale - bg_min_scale).item() / 2.0
+
+
     bkdg_colors = torch.logit(points.colors)
+    bkdg_feats = (points.feats)
+    print('---'*50, bkdg_feats)
 
     # Initialize gaussian scales: find the average of the three nearest
     # neighbors in the first frame for each point and use that as the
@@ -149,7 +154,9 @@ def init_bg(
         bg_opacities,
         scene_center=bg_scene_center,
         scene_scale=bg_scene_scale,
+        feats=bkdg_feats,
     )
+    print('intit_bck_gasu'+'-'*50)
     return gaussians
 
 
@@ -736,47 +743,3 @@ def init_fg_from_known_pc(
     return gaussians
 
 
-def init_bg(
-    points: StaticObservations,
-) -> GaussianParams:
-    """
-    using dataclasses instead of individual tensors so we know they're consistent
-    and are always masked/filtered together
-    """
-    num_init_bg_gaussians = points.xyz.shape[0]
-    bg_scene_center = points.xyz.mean(0)
-    bg_points_centered = points.xyz - bg_scene_center
-    bg_min_scale = bg_points_centered.quantile(0.05, dim=0)
-    bg_max_scale = bg_points_centered.quantile(0.95, dim=0)
-    bg_scene_scale = torch.max(bg_max_scale - bg_min_scale).item() / 2.0
-    bkdg_colors = torch.logit(points.colors)
-
-    # Initialize gaussian scales: find the average of the three nearest
-    # neighbors in the first frame for each point and use that as the
-    # scale.
-    dists, _ = knn(points.xyz, 3)
-    dists = torch.from_numpy(dists)
-    bg_scales = dists.mean(dim=-1, keepdim=True)
-    bkdg_scales = torch.log(bg_scales.repeat(1, 3))
-
-    bg_means = points.xyz
-
-    # Initialize gaussian orientations by normals.
-    local_normals = points.normals.new_tensor([[0.0, 0.0, 1.0]]).expand_as(
-        points.normals
-    )
-    bg_quats = roma.rotvec_to_unitquat(
-        F.normalize(local_normals.cross(points.normals), dim=-1)
-        * (local_normals * points.normals).sum(-1, keepdim=True).acos_()
-    ).roll(1, dims=-1)
-    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
-    gaussians = GaussianParams(
-        bg_means,
-        bg_quats,
-        bkdg_scales,
-        bkdg_colors,
-        bg_opacities,
-        scene_center=bg_scene_center,
-        scene_scale=bg_scene_scale,
-    )
-    return gaussians

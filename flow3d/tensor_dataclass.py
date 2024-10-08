@@ -88,6 +88,7 @@ class StaticObservations(TensorDataclass):
     xyz: torch.Tensor
     normals: torch.Tensor
     colors: torch.Tensor
+    feats: torch.Tensor
 
     def check_sizes(self) -> bool:
         dims = self.xyz.shape

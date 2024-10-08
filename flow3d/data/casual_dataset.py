@@ -510,6 +510,7 @@ class CasualDataset(BaseDataset):
         print(f"{query_idcs=}")
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
+            feat = self.get_feat(query_idx)
             depth = self.get_depth(query_idx)
             bg_mask = self.get_mask(query_idx) < 0
             bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
@@ -520,7 +521,7 @@ class CasualDataset(BaseDataset):
             # get the bounding box of previous points that reproject into frame
             # inefficient but works for now
             bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
-            for p3d, _, _ in bg_geometry:
+            for p3d, _, _, _ in bg_geometry:
                 if len(p3d) < 1:
                     continue
                 # reproject into current frame
@@ -562,16 +563,18 @@ class CasualDataset(BaseDataset):
             )
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
+            point_feats = feat[bool_mask]
 
             num_sel = max(len(points) // down_rate, min_per_frame)
             sel_idcs = np.random.choice(len(points), num_sel, replace=False)
             points = points[sel_idcs]
             point_normals = point_normals[sel_idcs]
             point_colors = point_colors[sel_idcs]
+            point_feats = point_feats[sel_idcs]
             guru.debug(f"{query_idx=} {points.shape=}")
-            bg_geometry.append((points, point_normals, point_colors))
+            bg_geometry.append((points, point_normals, point_colors, point_feats))
 
-        bg_points, bg_normals, bg_colors = map(
+        bg_points, bg_normals, bg_colors, bg_feats = map(
             partial(torch.cat, dim=0), zip(*bg_geometry)
         )
         if len(bg_points) > num_samples:
@@ -579,8 +582,9 @@ class CasualDataset(BaseDataset):
             bg_points = bg_points[sel_idcs]
             bg_normals = bg_normals[sel_idcs]
             bg_colors = bg_colors[sel_idcs]
+            bg_feats = bg_feats[sel_idcs]
 
-        return bg_points, bg_normals, bg_colors
+        return bg_points, bg_normals, bg_colors, bg_feats
 
     def __getitem__(self, index: int):
         index = np.random.randint(0, self.num_frames)

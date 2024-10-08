@@ -167,6 +167,10 @@ def check_gaussian_sizes(
     motion_coefs: torch.Tensor | None = None,
 ) -> bool:
     dims = means.shape[:-1]
+    print('*-*-*-'*70, means.shape, quats.shape, scales.shape, colors.shape, opacities.shape)
+
+    if motion_coefs is not None:
+      print(f'(MOTION_COEFS{motion_coefs.shape})')
     leading_dims_match = (
         quats.shape[:-1] == dims
         and scales.shape[:-1] == dims

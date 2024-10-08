@@ -120,6 +120,12 @@ class SceneModel(nn.Module):
         if self.bg is not None:
             colors = torch.cat([colors, self.bg.get_colors()], dim=0).contiguous()
         return colors
+        
+    def get_feats_all(self) -> torch.Tensor:
+        features = self.fg.get_feats()
+        if self.bg is not None:
+            features = torch.cat([features, self.bg.get_feats()], dim=0).contiguous()
+        return features
 
     def get_scales_all(self) -> torch.Tensor:
         scales = self.fg.get_scales()
@@ -138,11 +144,7 @@ class SceneModel(nn.Module):
             ).contiguous()
         return opacities
 
-    def get_feats_all(self) -> torch.Tensor:
-        features = self.fg.get_feats()
-        if self.bg is not None:
-            features = torch.cat([features, self.bg.get_feats()], dim=0).contiguous()
-        return features
+
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix=""):
@@ -272,7 +274,7 @@ class SceneModel(nn.Module):
             d_track = track_3d_vals.shape[-1]
 
             colors_override = torch.cat([colors_override, track_3d_vals], dim=-1)
-            #### (G, 3) + (G, 4)
+            #### (G, 3) + (G, 4*3)
             single_bg_color = bg_color
 
 
@@ -299,7 +301,7 @@ class SceneModel(nn.Module):
             feats_override = feats_override[filter_mask]
 
         # print('color-feat shape_2', colors_override.shape, means.shape)
-        # shape_2 torch.Size([181779, 15])
+        # shape_2 torch.Size([181779, 15])   3 
         render_colors, alphas, info = rasterization(
             means=means,
             quats=quats,
@@ -351,7 +353,7 @@ class SceneModel(nn.Module):
 
 
         #if isinstance(bg_color, float):
-        '''bg_feat = torch.ones((1, 32), device=device)
+        bg_feat = torch.ones((1, 32), device=device)
         render_feats, _, _ = rasterization(
             means=means,
             quats=quats,
@@ -376,7 +378,7 @@ class SceneModel(nn.Module):
             assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
             # print(x.shape)
             # torch.Size([1, 288, 512, 32])
-            out_dict[name] = x'''
+            out_dict[name] = x
 
         out_dict["acc"] = alphas
         return out_dict
