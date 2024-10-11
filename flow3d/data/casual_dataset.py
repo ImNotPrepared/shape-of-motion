@@ -310,7 +310,7 @@ class CasualDataset(BaseDataset):
         # path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
         path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
         
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/')
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_Aligned/')
         path = path.replace('toy_512_', 'undist_cam0')
         path = path.replace('jpg', 'npy')
         # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg

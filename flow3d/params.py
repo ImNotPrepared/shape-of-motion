@@ -86,7 +86,7 @@ class GaussianParams(nn.Module):
         return self.motion_coef_activation(self.params["motion_coefs"])
 
     def get_feats(self) -> torch.Tensor:
-        assert "feats" in self.params
+        #assert "feats" in self.params
         return (self.params["feats"]) #self.motion_coef_activation
 
     def densify_params(self, should_split, should_dup):

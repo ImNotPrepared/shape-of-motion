@@ -318,11 +318,7 @@ class SceneModel(nn.Module):
         )
         # print(bg_color.shape)
         ## colors: torch.Size([1, 288, 512, 16]) [4*(3+1)]        torch.Size([181670, 15])
-        # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape)
-        
-        
-
-        
+        # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape) 
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:
             self._current_xys = info["means2d"]

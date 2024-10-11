@@ -31,9 +31,9 @@ def main(cfg: RenderConfig):
 
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
 
-    # init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'    
-    init_pt_path = '/data3/zihanwa3/Capstone-DSR/Appendix/Depth-Anything-V2/da_pt_cld.npz'
-    # init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'  
+    #init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'    
+    #init_pt_path = '/data3/zihanwa3/Capstone-DSR/Appendix/Depth-Anything-V2/da_pt_cld_4_Stat.npz'
+    init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'  
     assert os.path.exists(ckpt_path)
     renderer = Renderer.init_from_pc_checkpoint(
         pc_dir=init_pt_path,
