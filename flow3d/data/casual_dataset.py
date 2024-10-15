@@ -206,13 +206,15 @@ class CasualDataset(BaseDataset):
             K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)
             Ks = np.tile(K[None, ...], (len(traj_c2w), 1, 1))  # (N, 3, 3)
 
-            path='/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/droid_recon/toy_4.npy'
-            recon = np.load(path, allow_pickle=True).item()
-            kf_tstamps = recon["tstamps"].astype("int")
+            #path='/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/droid_recon/toy_4.npy'
+            #recon = np.load(path, allow_pickle=True).item()
+            #kf_tstamps = recon["tstamps"].astype("int")
+            #kf_tstamps = torch.from_numpy(kf_tstamps)
+            kf_tstamps=None
             return (
                 torch.from_numpy(traj_c2w).float(),
                 torch.from_numpy(Ks).float(),
-                torch.from_numpy(kf_tstamps),
+                kf_tstamps,
             )
         
 
@@ -237,8 +239,12 @@ class CasualDataset(BaseDataset):
 
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
-        tmask = (tstamps >= start) & (tstamps < end)
-        self._keyframe_idcs = tstamps[tmask] - start
+        if tstamps is None:
+          self._keyframe_idcs=None
+        else:
+          tmask = (tstamps >= start) & (tstamps < end)
+          self._keyframe_idcs = tstamps[tmask] - start
+          
         self.scale = 1
 
         if scene_norm_dict is None:
@@ -499,12 +505,13 @@ class CasualDataset(BaseDataset):
             dim=-1,
         )
 
-        if use_kf_tstamps:
-            query_idcs = self.keyframe_idcs.tolist()
-        else:
-            num_query_frames = self.num_frames // stride
-            query_endpts = torch.linspace(start, end, num_query_frames + 1)
-            query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
+        ###  start 
+        #if use_kf_tstamps:
+        #    query_idcs = self.keyframe_idcs.tolist()
+        #else:
+        num_query_frames = self.num_frames // stride
+        query_endpts = torch.linspace(start, end, num_query_frames + 1)
+        query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
 
         bg_geometry = []
         print(f"{query_idcs=}")

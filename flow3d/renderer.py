@@ -238,7 +238,6 @@ class Renderer:
             if not self.viewer._canonical_checkbox.value
             else None
         )
-        print(t)
         self.model.training = False
         #fg_only=True
         img = self.model.render(t, w2c[None], K[None], img_wh, )["img"][0]

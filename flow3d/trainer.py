@@ -175,6 +175,7 @@ class Trainer:
         self.stats = stats 
         wandb.log(self.stats)
         self.num_rays_per_sec=num_rays_per_sec
+        self.num_rays_per_step = num_rays_per_step
         if loss.isnan():
             guru.info(f"Loss is NaN at step {self.global_step}!!")
             import ipdb

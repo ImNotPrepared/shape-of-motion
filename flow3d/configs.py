@@ -38,7 +38,7 @@ class SceneLRConfig:
 @dataclass
 class LossesConfig:
     w_rgb: float = 1.0
-    w_feat: float = 0.01
+    w_feat: float = 1.0 #0.01
     w_depth_reg: float = 0.5
     w_depth_const: float = 0.1
     w_depth_grad: float = 1
@@ -60,7 +60,7 @@ class OptimizerConfig:
     stop_control_by_screen_steps: int = 4000
     stop_control_steps: int = 4000
     ### Densify.
-    densify_xys_grad_threshold: float = 0.0002
+    densify_xys_grad_threshold: float = 0.0002 # 0.0002
     densify_scale_threshold: float = 0.01
     densify_screen_threshold: float = 0.05
     stop_densify_steps: int = 15000

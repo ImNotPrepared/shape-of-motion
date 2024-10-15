@@ -171,6 +171,7 @@ def init_motion_params_with_procrustes(
     port: int | None = None,
 ) -> tuple[MotionBases, torch.Tensor, TrackObservations]:
     device = tracks_3d.xyz.device
+    print( tracks_3d.xyz.shape)
     num_frames = tracks_3d.xyz.shape[1]
     # sample centers and get initial se3 motion bases by solving procrustes
     means_cano = tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
@@ -608,7 +609,7 @@ def sample_initial_bases_centers(
 
     num_tracks = xyz.shape[0]
     xyz_interp = batched_interp_masked(xyz, visibles)
-
+    velocities = xyz_interp[:, 1:] - xyz_interp[:, :-1]
     # num_vis = 50
     # server = get_server(port=8890)
     # idcs = np.random.choice(num_tracks, num_vis)
@@ -617,7 +618,7 @@ def sample_initial_bases_centers(
     # vis_tracks_3d(server, xyz_interp[idcs].get(), labels, name="interp_tracks")
     # import ipdb; ipdb.set_trace()
 
-    velocities = xyz_interp[:, 1:] - xyz_interp[:, :-1]
+
     vel_dirs = (
         velocities / (cp.linalg.norm(velocities, axis=-1, keepdims=True) + 1e-5)
     ).reshape((num_tracks, -1))
