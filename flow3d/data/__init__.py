@@ -3,7 +3,7 @@ from dataclasses import asdict, replace
 from torch.utils.data import Dataset
 
 from .base_dataset import BaseDataset
-from .casual_dataset import CasualDataset, CustomDataConfig, DavisDataConfig
+from .casual_dataset import CasualDataset, CustomDataConfig, DavisDataConfig, GiantCasualDataset
 from .iphone_dataset import (
     iPhoneDataConfig,
     iPhoneDataset,

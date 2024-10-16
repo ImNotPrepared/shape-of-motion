@@ -74,6 +74,7 @@ class CustomDataConfig:
     load_from_cache: bool = False
 
 
+
 class CasualDataset(BaseDataset):
     def __init__(
         self,
@@ -624,6 +625,9 @@ class CasualDataset(BaseDataset):
         )
         # (N, P, 4)
         target_tracks = self.load_target_tracks(index, target_inds.tolist(), dim=0)
+
+
+        
         data["query_tracks_2d"] = query_tracks
         data["target_ts"] = target_inds
         data["target_w2cs"] = self.w2cs[target_inds]
@@ -646,7 +650,36 @@ class CasualDataset(BaseDataset):
         )[:, 0, :, 0]
         return data
 
+class GiantCasualDataset(CasualDataset):
+    def __init__(self, dataset1: CasualDataset, dataset2: CasualDataset, dataset3: CasualDataset, dataset4: CasualDataset):
+        """
+        A dataset that merges four CasualDataset instances into one, creating a larger dataset where each item is a combination
+        of the corresponding items from the four datasets.
+        """
+        self.datasets = [dataset1, dataset2, dataset3, dataset4]
+        self.frame_names = dataset1.frame_names + dataset2.frame_names + dataset3.frame_names + dataset4.frame_names
 
+    def __len__(self):
+        """
+        The length of the merged dataset is the same as any of the individual datasets.
+        """
+        return len(self.datasets[0])
+
+    def __getitem__(self, index):
+        """
+        Returns a merged batch with elements from all four datasets at the given index.
+        """
+        data_list = [dataset[index] for dataset in self.datasets]
+
+        # Merge the data from the four datasets
+        merged_data = {}
+        for key in data_list[0].keys():
+            if isinstance(data_list[0][key], torch.Tensor):
+                merged_data[key] = torch.stack([data[key] for data in data_list], dim=0)
+            else:
+                merged_data[key] = [data[key] for data in data_list]
+
+        return merged_data
 
 
 def compute_scene_norm(

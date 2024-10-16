@@ -228,24 +228,6 @@ class SceneModel(nn.Module):
         mode = "RGB"
         ds_expected = {"img": D}
 
-        ### ADDED FEATURE
-        '''if features_override is None:
-            if return_feature:
-                features_override = (
-                    self.fg.get_features() if fg_only else self.get_features_all()
-                )
-            else:
-                features_override = torch.zeros(N, 0, device=device)
-
-        D = features_override.shape[-1]
-
-        if isinstance(bg_feature, float):
-            bg_feature = torch.full((C, D), bg_feature, device=device)
-        assert isinstance(bg_feature, torch.Tensor)
-
-        mode = "Features"
-        ds_expected = {"img": D}'''
-
         if return_mask:
             if self.has_bg and not fg_only:
                 mask_values = torch.zeros((self.num_gaussians, 1), device=device)
@@ -263,13 +245,14 @@ class SceneModel(nn.Module):
             if target_means is None:
                 target_means, _ = pose_fnc(target_ts)  # [G, B, 3] 4 3 1
             if target_w2cs is not None:
+                # ([B, 4, 4], [G, B, 3]) -> [G, B, 3] (N, Tb, 3)
                 target_means = torch.einsum(
                     "bij,pbj->pbi",
                     target_w2cs[:, :3],
                     F.pad(target_means, (0, 1), value=1.0),
                 )
 
-            track_3d_vals = target_means.flatten(-2)  # (G, B * 3)
+            track_3d_vals = target_means.flatten(-2)  # (G, B * 3) or [N, Tb * 3]
             
             d_track = track_3d_vals.shape[-1]
 
@@ -318,6 +301,7 @@ class SceneModel(nn.Module):
         )
         # print(bg_color.shape)
         ## colors: torch.Size([1, 288, 512, 16]) [4*(3+1)]        torch.Size([181670, 15])
+        ### 
         # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape) 
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:

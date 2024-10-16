@@ -20,6 +20,7 @@ from flow3d.data import (
     CustomDataConfig,
     get_train_val_datasets,
     iPhoneDataConfig,
+    GiantCasualDataset
 )
 from flow3d.data.utils import to_device
 from flow3d.init_utils import (
@@ -63,11 +64,11 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 30_000
+    num_fg: int = 10_000
     num_bg: int = 50_000 ### changed to 0 # 100_000
-    num_motion_bases: int = 21
+    num_motion_bases: int = 10
     num_epochs: int = 500
-    port: int | None = 7730
+    port: int | None = None
     vis_debug: bool = False 
     batch_size: int = 8
     num_dl_workers: int = 4
@@ -107,6 +108,7 @@ def main(cfgs):
     train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
     train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
     train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
+
 
     debug=False
 
@@ -206,22 +208,7 @@ def initialize_and_checkpoint_model(
     motion_bases_fuse = []
     bg_params_fuse = []
 
-    fg_params, motion_bases, bg_params, tracks_3d = init_model_from_unified_tracks(
-        train_datasets,
-        cfg.num_fg,
-        cfg.num_bg,
-        cfg.num_motion_bases,
-        vis=vis,
-        port=port,
-    )
     for train_dataset in train_datasets:
-        Ks = train_dataset.get_Ks().to(device)
-        w2cs = train_dataset.get_w2cs().to(device)
-        Ks_fuse.append(Ks)
-        w2cs_fuse.append(w2cs)
-
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1400)
-    '''for train_dataset in train_datasets:
         # Initialize model from tracks
 
         fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
@@ -244,16 +231,14 @@ def initialize_and_checkpoint_model(
         fg_params_fuse.append(fg_params)
         motion_bases_fuse.append(motion_bases)
 
-        bg_params_fuse.append(bg_params)'''
+        bg_params_fuse.append(bg_params)
         
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
-    if vis and cfg.port is not None:
-        server = get_server(port=cfg.port)
-        vis_init_params(server, fg_params, motion_bases)
-    model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
-    '''prefix="params."
+
+
+    prefix="params."
 
     fg_state_dict_fused = {} 
 
@@ -319,87 +304,12 @@ def initialize_and_checkpoint_model(
     #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
 
 
-    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)'''
+    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)
     print('SANITY_CCCCHECK', model.fg.get_coefs().shape, model.fg.get_colors().shape)
 
     guru.info(f"Saving initialization to {ckpt_path}")
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
-
-
-def init_model_from_unified_tracks(
-    train_datasets,
-    num_fg: int,
-    num_bg: int,
-    num_motion_bases: int,
-    vis: bool = False,
-    port: int | None = None,
-):
-
-    train_dataset1 = train_datasets[0]
-    train_dataset2 = train_datasets[1]
-    train_dataset3 = train_datasets[2]
-    train_dataset4 = train_datasets[3]
-
-
-    # Assuming each dataset returns multiple components as PyTorch tensors
-    tracks_3d_1, visibles_1, invisibles_1, confidences_1, colors_1, feats_1 = train_dataset1.get_tracks_3d(num_fg)
-    tracks_3d_2, visibles_2, invisibles_2, confidences_2, colors_2, feats_2 = train_dataset2.get_tracks_3d(num_fg)
-    tracks_3d_3, visibles_3, invisibles_3, confidences_3, colors_3, feats_3 = train_dataset3.get_tracks_3d(num_fg)
-    tracks_3d_4, visibles_4, invisibles_4, confidences_4, colors_4, feats_4 = train_dataset4.get_tracks_3d(num_fg)
-
-    # Concatenate each component separately using torch.cat
-    combined_tracks_3d = torch.cat((tracks_3d_1, tracks_3d_2, tracks_3d_3, tracks_3d_4), dim=0)
-    combined_visibles = torch.cat((visibles_1, visibles_2, visibles_3, visibles_4), dim=0)
-    combined_invisibles = torch.cat((invisibles_1, invisibles_2, invisibles_3, invisibles_4), dim=0)
-    combined_confidences = torch.cat((confidences_1, confidences_2, confidences_3, confidences_4), dim=0)
-    combined_colors = torch.cat((colors_1, colors_2, colors_3, colors_4), dim=0)
-    combined_feats = torch.cat((feats_1, feats_2, feats_3, feats_4), dim=0)
-
-    # You can now return or use the combined dataset
-    combined_data = (combined_tracks_3d, combined_visibles, combined_invisibles, combined_confidences, combined_colors, combined_feats)
-
-    print('track3d shape', tracks_3d_1.shape, tracks_3d_2.shape, tracks_3d_3.shape, tracks_3d_4.shape)
-    tracks_3d = TrackObservations(*combined_data)
-    rot_type = "6d"
-    cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
-    )
-
-
-    motion_bases = motion_bases.to(device)
-    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
-    fg_params = fg_params.to(device)
-
-    bg_params = None
-    if num_bg > 0:
-
-        bg_points_1, bg_normals_1, bg_colors_1, bg_feats_1 = train_dataset1.get_bkgd_points(num_fg)
-        bg_points_2, bg_normals_2, bg_colors_2, bg_feats_2 = train_dataset2.get_bkgd_points(num_fg)
-        bg_points_3, bg_normals_3, bg_colors_3, bg_feats_3 = train_dataset3.get_bkgd_points(num_fg)
-        bg_points_4, bg_normals_4, bg_colors_4, bg_feats_4 = train_dataset4.get_bkgd_points(num_fg)
-
-        # Concatenate each component separately using torch.cat
-        combined_bg_points = torch.cat((bg_points_1, bg_points_2, bg_points_3, bg_points_4), dim=0)
-        combined_bg_normals = torch.cat((bg_normals_1, bg_normals_2, bg_normals_3, bg_normals_4), dim=0)
-        combined_bg_colors = torch.cat((bg_colors_1, bg_colors_2, bg_colors_3, bg_colors_4), dim=0)
-        combined_bg_feats = torch.cat((bg_feats_1, bg_feats_2, bg_feats_3, bg_feats_4), dim=0)
-
-        # You can now return or use the combined background dataset
-        combined_bg_data = (combined_bg_points, combined_bg_normals, combined_bg_colors, combined_bg_feats)
-
-
-        bg_points = StaticObservations(*combined_bg_data)
-        assert bg_points.check_sizes()
-        bg_params = init_bg(bg_points)
-        bg_params = bg_params.to(device)
-
-    tracks_3d = tracks_3d.to(device)
-    return fg_params, motion_bases, bg_params, tracks_3d
-
 
 
 def init_model_from_tracks(
@@ -462,7 +372,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_tessst_remodata'
+    work_dir = './output_duster_feature_rendering_test_new_config'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(

@@ -9,7 +9,7 @@ class FGLRConfig:
     quats: float = 1e-3
     colors: float = 1e-2
     feats: float = 1e-3
-    motion_coefs: float = 1e-2
+    motion_coefs: float = 1e-3
 
 
 @dataclass
@@ -34,9 +34,23 @@ class SceneLRConfig:
     bg: BGLRConfig
     motion_bases: MotionLRConfig
 
-
 @dataclass
 class LossesConfig:
+    w_rgb: float = 1.0
+    w_feat: float = 1.0 #0.01
+    w_depth_reg: float = 0.5
+    w_depth_const: float = 0.1
+    w_depth_grad: float = 1
+    w_track: float = 2.0
+    w_mask: float = 1.0
+    w_smooth_bases: float = 0.1
+    w_smooth_tracks: float = 2.0
+    w_scale_var: float = 0.01
+    w_z_accel: float = 1.0
+
+
+@dataclass
+class LossesGTConfig:
     w_rgb: float = 1.0
     w_feat: float = 1.0 #0.01
     w_depth_reg: float = 0.5

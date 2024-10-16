@@ -226,8 +226,9 @@ class Renderer:
         W, H = img_wh
 
         focal = 0.5 * H / np.tan(0.5 * camera_state.fov).item()
+        cx, cy =  W / 2.0, H / 2.0
         K = torch.tensor(
-            [[focal, 0.0, W / 2.0], [0.0, focal, H / 2.0], [0.0, 0.0, 1.0]],
+            [[focal, 0.0, cx], [0.0, focal, cy], [0.0, 0.0, 1.0]],
             device=self.device,
         )
         w2c = torch.linalg.inv(

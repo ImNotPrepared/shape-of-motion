@@ -215,6 +215,7 @@ class Trainer:
 
         N = batch[0]["target_ts"][0].shape[0]
 
+
         '''
         ts torch.Size([8])
         w2cs torch.Size([8, 4, 4])
@@ -274,7 +275,25 @@ class Trainer:
         target_confidences = [confidence for b in batch for confidence in b["target_confidences"]]
         target_track_depths = [depth for b in batch for depth in b["target_track_depths"]]
  # List of (N, P) per batch
+
+        ### num_targets_per_frame: 4
         _tic = time.time()
+        print(batch[0]["target_ts"][0])
+        print(batch[0]["target_ts"][1])
+        print(batch[0]["target_ts"][2])
+        print(batch[0]["target_ts"][3])
+
+        print(batch[1]["target_ts"][0])
+        print(batch[1]["target_ts"][1])
+        print(batch[1]["target_ts"][2])
+        print(batch[1]["target_ts"][3])
+
+
+        print(batch[0]["target_ts"][0].shape[0])
+        print(batch[0]["target_ts"][1].shape[0])
+        print(batch[0]["target_ts"][2].shape[0])
+        print(batch[0]["target_ts"][3].shape[0])
+        print(len(target_track_depths), target_track_depths[0].shape)
         # (B, G, 3).
         means, quats = self.model.compute_poses_all(ts)  # (G, B, 3), (G, B, 4)
 
@@ -433,16 +452,24 @@ class Trainer:
         loss += mask_loss * self.losses_cfg.w_mask
 
         # (B * N, H * W, 3).
+        ## (B, N, H, W, 3)
         pred_tracks_3d = (
             rendered_all["tracks_3d"].permute(0, 3, 1, 2, 4).reshape(-1, H * W, 3)  # type: ignore
         )
+        # colors: torch.Size([4, 1, 288, 512, 16]) 
         pred_tracks_2d = torch.einsum(
             "bij,bpj->bpi", torch.cat(target_Ks), pred_tracks_3d
         )
+
+
         # (B * N, H * W, 1).
         mapped_depth = torch.clamp(pred_tracks_2d[..., 2:], min=1e-6)
         # (B * N, H * W, 2).
         pred_tracks_2d = pred_tracks_2d[..., :2] / mapped_depth
+
+
+
+
 
         # (B * N).
         w_interval = torch.exp(-2 * frame_intervals / num_frames)
