@@ -282,8 +282,13 @@ class CasualDataset(BaseDataset):
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
 
+    def get_images(self):
+        imgs = [cast(torch.Tensor, self.load_image(index)) for index in range(len(self.frame_names))]
+        return imgs
+
     def get_img_wh(self) -> tuple[int, int]:
         return self.get_image(0).shape[1::-1]
+
 
     def get_image(self, index) -> torch.Tensor:
         if self.imgs[index] is None:
@@ -481,6 +486,9 @@ class CasualDataset(BaseDataset):
         tracks_3d, colors, feats, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
         )
+        #print('wtttf', colors.shape)
+        #print('wtttf', feats.shape)
+
         return tracks_3d, visibles, invisibles, confidences, colors, feats
 
 
@@ -610,6 +618,8 @@ class CasualDataset(BaseDataset):
             "feats": self.get_feat(index),
             "depths": self.get_depth(index),
         }
+        print('wtttf', self.get_feat(index).shape)
+        print('wtttf', self.get_image(index).shape)
         tri_mask = self.get_mask(index)
         valid_mask = tri_mask != 0  # not fg or bg
         mask = tri_mask == 1  # fg mask
@@ -627,7 +637,7 @@ class CasualDataset(BaseDataset):
         target_tracks = self.load_target_tracks(index, target_inds.tolist(), dim=0)
 
 
-        
+
         data["query_tracks_2d"] = query_tracks
         data["target_ts"] = target_inds
         data["target_w2cs"] = self.w2cs[target_inds]

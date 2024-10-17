@@ -7,7 +7,7 @@ from nerfview import CameraState
 from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import draw_tracks_2d_th, get_server
 from flow3d.vis.viewer import DynamicViewer
-
+import pickle
 
 class Renderer:
     def __init__(
@@ -23,9 +23,16 @@ class Renderer:
         self.device = device
 
         self.model = model
+
+        self.data_path = '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/'
+        with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
+          self.feat_base = pickle.load(f)
+
+
         if self.model is None:
           self.pc = init_pt_cld = np.load(pc_dir)#["data"]
-          self.num_frames = len(self.pc.keys())
+
+          self.num_frames = 111 ##len(self.pc.keys())
 
           if self.num_frames == 1:
             self.pc = np.load(pc_dir)["data"]
@@ -120,11 +127,13 @@ class Renderer:
         )
         # [t]
         # Assuming self.pc is of shape [N, 6] with XYZRGB
-        try:  
-          pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
-        except:
-          print(self.pc.shape)
-          pc = torch.tensor(self.pc).cuda()[:, :6].float()
+        #try:  
+          # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
+        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
+        pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
+        #except:
+        #  print(self.pc.shape)
+        #  pc = torch.tensor(self.pc).cuda()[:, :6].float()
 
         pc_xyz = pc[:, :3]   # Shape: (N, 3)
         colors = pc[:, 3:6]  # Shape: (N, 3)
@@ -227,6 +236,8 @@ class Renderer:
 
         focal = 0.5 * H / np.tan(0.5 * camera_state.fov).item()
         cx, cy =  W / 2.0, H / 2.0
+        cx -= 0.5
+        cy -= 0.5
         K = torch.tensor(
             [[focal, 0.0, cx], [0.0, focal, cy], [0.0, 0.0, 1.0]],
             device=self.device,
@@ -241,9 +252,23 @@ class Renderer:
         )
         self.model.training = False
         #fg_only=True
+        ## torch.Size([1, 1029, 2048, 32]) -> torch.Size([1029, 2048, 3])
         img = self.model.render(t, w2c[None], K[None], img_wh, )["img"][0]
+        feat = self.model.render(t, w2c[None], K[None], img_wh, )["feat"][0]
+
+        
+        #[0]
+
         if not self.viewer._render_track_checkbox.value:
+            if self.feat_base:
+              # feat: torch.Size([1029, 2048, 32])
+              pca_feat = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
+              print(pca_feat.shape)
+              pca_feat = pca_feat.reshape(feat.shape[0], feat.shape[1], -1)
+              print(pca_feat.shape)
+              return pca_feat
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
+            
         else:
             assert t is not None
             tracks_3d = self.tracks_3d[:, max(0, t - 20) : max(1, t)]

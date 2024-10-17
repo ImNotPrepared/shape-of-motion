@@ -173,6 +173,13 @@ def init_motion_params_with_procrustes(
     device = tracks_3d.xyz.device
     print( tracks_3d.xyz.shape)
     num_frames = tracks_3d.xyz.shape[1]
+
+
+
+
+
+
+
     # sample centers and get initial se3 motion bases by solving procrustes
     means_cano = tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
     print('aaaaaaaaaaaaaaaaFUCKOFFaaaaaaaaaaaa', )
@@ -192,6 +199,8 @@ def init_motion_params_with_procrustes(
     if vis and port is not None:
         server = get_server(port)
         try:
+
+
             pts = tracks_3d.xyz.cpu().numpy()
             clrs = tracks_3d.colors.cpu().numpy()
             while True:
@@ -592,19 +601,8 @@ def sample_initial_bases_centers(
     """
     assert mode in ["farthest", "hdbscan", "kmeans"]
     means_canonical = tracks_3d.xyz[:, cano_t].clone()
-    # if mode == "farthest":
-    #     vis_mask = tracks_3d.visibles[:, cano_t]
-    #     sampled_centers, _ = sample_farthest_points(
-    #         means_canonical[vis_mask][None],
-    #         K=num_bases,
-    #         random_start_point=True,
-    #     )  # [1, num_bases, 3]
-    #     dists2centers = torch.norm(means_canonical[:, None] - sampled_centers, dim=-1).T
-    #     return sampled_centers, num_bases, dists2centers
-
-    # linearly interpolate missing 3d points
     xyz = cp.asarray(tracks_3d.xyz)
-    print(f"{xyz.shape=}")
+    print(f"{xyz.shape=}") # [N, T, 3]
     visibles = cp.asarray(tracks_3d.visibles)
 
     num_tracks = xyz.shape[0]
@@ -619,10 +617,11 @@ def sample_initial_bases_centers(
     # import ipdb; ipdb.set_trace()
 
 
+
     vel_dirs = (
         velocities / (cp.linalg.norm(velocities, axis=-1, keepdims=True) + 1e-5)
-    ).reshape((num_tracks, -1))
-
+    ).reshape((num_tracks, -1)) ## [N, (T-1) * 3] 
+    print(vel_dirs.shape)
     # [num_bases, num_gaussians]
     if mode == "kmeans":
         model = KMeans(n_clusters=num_bases)
@@ -646,8 +645,6 @@ def sample_initial_bases_centers(
     #    sampled_centers = torch.cat([sampled_centers, extra_centers], dim=1)
 
 
-    print(torch.tensor(labels).shape, 'labelshapeppp')
-    print("number of {} clusters: ".format(mode), num_bases) ## labels [N]
     return sampled_centers, num_bases, torch.tensor(labels)
 
 

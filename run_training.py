@@ -29,6 +29,7 @@ from flow3d.init_utils import (
     init_motion_params_with_procrustes,
     run_initial_optim,
     vis_init_params,
+    vis_tracks_2d_video, 
 )
 
 from flow3d.params import GaussianParams, MotionBases
@@ -110,6 +111,8 @@ def main(cfgs):
     train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
 
 
+
+
     debug=False
 
 
@@ -187,6 +190,13 @@ def main(cfgs):
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
+def get_2d_vis(dataset, tracks_3d):
+  imgs = dataset.get_images()
+  Ks = dataset.get_Ks()
+  w2cs = dataset.get_w2cs()
+  #tracks_3d = dataset.get_tracks_3d(5000, step=111 // 10)[0]
+  vis_tracks_2d_video('./flow3d/vis/test.gif', imgs, tracks_3d, Ks, w2cs)
+
 
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
@@ -220,6 +230,10 @@ def initialize_and_checkpoint_model(
             port=port,
         )
         # Get camera intrinsic matrices and world-to-camera transformations
+        to_feed_xyz = tracks_3d.xyz.clone().detach()
+        get_2d_vis(train_dataset, to_feed_xyz)
+
+
         Ks = train_dataset.get_Ks().to(device)
         w2cs = train_dataset.get_w2cs().to(device)
 
@@ -321,11 +335,23 @@ def init_model_from_tracks(
     port: int | None = None,
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
+    '''
+    for k in train_dataset.get_tracks_3d(num_fg):
+      print(k.shape)
+    torch.Size([5724, 112, 3])
+    torch.Size([5724, 112])
+    torch.Size([5724, 112])
+    torch.Size([5724, 112])
+    torch.Size([5724, 3])
+    torch.Size([5724, 32])
+    '''
+
     print(
         f"{tracks_3d.xyz.shape=} {tracks_3d.visibles.shape=} "
         f"{tracks_3d.invisibles.shape=} {tracks_3d.confidences.shape} "
         f"{tracks_3d.colors.shape}"
     )
+    print( tracks_3d.xyz.shape, tracks_3d.feats.shape)
     if not tracks_3d.check_sizes():
         import ipdb
 
@@ -372,7 +398,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_test_new_config'
+    work_dir = './output_duster_feature_rendering_test_new_config_TTT'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
