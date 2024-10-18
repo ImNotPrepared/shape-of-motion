@@ -65,8 +65,8 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 10_000
-    num_bg: int = 50_000 ### changed to 0 # 100_000
+    num_fg: int = 70_000
+    num_bg: int = 0 ### changed to 0 # 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int | None = None
@@ -231,7 +231,9 @@ def initialize_and_checkpoint_model(
         )
         # Get camera intrinsic matrices and world-to-camera transformations
         to_feed_xyz = tracks_3d.xyz.clone().detach()
-        get_2d_vis(train_dataset, to_feed_xyz)
+
+        # vis tracker
+        # get_2d_vis(train_dataset, to_feed_xyz)
 
 
         Ks = train_dataset.get_Ks().to(device)
@@ -311,8 +313,11 @@ def initialize_and_checkpoint_model(
 
     fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
     motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-    bg_params_fused = None
-    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
+
+    if bg_params is None:
+      bg_params_fused = None
+    else:
+      bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
 
     #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
     #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
@@ -398,7 +403,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_test_new_config_TTT'
+    work_dir = './output_duster_feature_rendering_fg_only_feat'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(

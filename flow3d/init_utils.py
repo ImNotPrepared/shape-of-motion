@@ -219,7 +219,7 @@ def init_motion_params_with_procrustes(
     # assign each point to the label to compute the cluster weight
     ids, counts = labels.unique(return_counts=True)
     print(f"{ids=} {counts=}")
-    ids = ids[counts > 80] ### 100
+    ids = ids[counts > 50] ### 100
     print(f"{ids=}")
     #num_bases = len(ids)
     sampled_centers = sampled_centers[:, ids]

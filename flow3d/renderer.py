@@ -25,8 +25,9 @@ class Renderer:
         self.model = model
 
         self.data_path = '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/'
-        with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
-          self.feat_base = pickle.load(f)
+        self.feat_base = None
+        #with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
+        #  self.feat_base = pickle.load(f)
 
 
         if self.model is None:
@@ -129,8 +130,10 @@ class Renderer:
         # Assuming self.pc is of shape [N, 6] with XYZRGB
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
-        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
+        # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
+        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_aligned_new_fg/{t+183}/pc.npz'
         pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
+        pc[:, 3:] = pc[:, 3:] / 255
         #except:
         #  print(self.pc.shape)
         #  pc = torch.tensor(self.pc).cuda()[:, :6].float()
@@ -262,11 +265,22 @@ class Renderer:
         if not self.viewer._render_track_checkbox.value:
             if self.feat_base:
               # feat: torch.Size([1029, 2048, 32])
-              pca_feat = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
-              print(pca_feat.shape)
-              pca_feat = pca_feat.reshape(feat.shape[0], feat.shape[1], -1)
-              print(pca_feat.shape)
-              return pca_feat
+              pca_features = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
+              #print(pca_feat.shape, img.cpu().numpy().min(), img.cpu().numpy().max(),)
+              #pca_feat = pca_feat.reshape(feat.shape[0], feat.shape[1], -1)
+              #print(pca_feat.shape, pca_feat.min(), pca_feat.max())
+              pca_features_norm = (pca_features - pca_features.min()) / (pca_features.max() - pca_features.min())
+              pca_features_norm = (pca_features_norm * 255).astype(np.uint8)
+              
+              # Reconstruct full image
+              full_pca_features = np.zeros((pca_features.shape[0], 3), dtype=np.uint8)
+              #if mask is not None:
+              #    full_pca_features[mask_flat] = pca_features_norm
+              #else:
+              full_pca_features = pca_features_norm
+              pca_features_image = full_pca_features.reshape(feat.shape[0], feat.shape[1], 3)
+              
+              return pca_features_image
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
             
         else:

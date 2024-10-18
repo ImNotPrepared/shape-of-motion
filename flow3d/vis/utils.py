@@ -4,7 +4,7 @@ from typing import cast
 import cv2
 import numpy as np
 
-# import nvdiffrast.torch as dr
+import nvdiffrast.torch as dr
 import torch
 import torch.nn.functional as F
 from matplotlib import colormaps
