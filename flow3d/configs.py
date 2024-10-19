@@ -74,13 +74,19 @@ class OptimizerConfig:
     stop_control_by_screen_steps: int = 4000
     stop_control_steps: int = 4000
     ### Densify.
-    densify_xys_grad_threshold: float = 0.0002 # 0.0002
-    densify_scale_threshold: float = 0.01
+    densify_xys_grad_threshold: float = 0.001# 0.0002 # 0.0002
+    densify_scale_threshold: float = 0.01 
+          #  should_split = is_grad_too_high & (is_scale_too_big | is_radius_too_big)
+      #  should_dup = is_grad_too_high & ~is_scale_too_big
     densify_screen_threshold: float = 0.05
     stop_densify_steps: int = 15000
     ### Cull.
-    cull_opacity_threshold: float = 0.1
-    cull_scale_threshold: float = 0.5
-    cull_screen_threshold: float = 0.15
-    ##
+    cull_opacity_threshold: float = 0.07# 0.1
+    # is_opacity_too_small = opacities < cfg.cull_opacity_threshold
+    cull_scale_threshold: float = 0.37# 0.5
+    # is_scale_too_big = scales.amax(dim=-1) > cull_scale_threshold
+    cull_screen_threshold: float = 0.21#0.15
+    ##                is_radius_too_big = (
+    #                self.running_stats["max_radii"] > cfg.cull_screen_threshold
+    #            )
     #feat: float = 0.01

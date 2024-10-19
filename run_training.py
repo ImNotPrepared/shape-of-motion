@@ -65,7 +65,7 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 30_000
+    num_fg: int = 70_000
     num_bg: int = 50_000 ### changed to 0 # 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
@@ -240,7 +240,7 @@ def initialize_and_checkpoint_model(
         w2cs = train_dataset.get_w2cs().to(device)
 
 
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1000)
+        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1400)
         #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
@@ -403,7 +403,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_new_fg_test_com'
+    work_dir = './output_duster_feature_rendering_new_fg_fixed_only_as_sanity'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
