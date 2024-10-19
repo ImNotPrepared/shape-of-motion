@@ -131,9 +131,9 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_aligned_new_fg/{t+183}/pc.npz'
+        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/fg_pc.npz'
         pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
-        pc[:, 3:] = pc[:, 3:] / 255
+        #pc[:, 3:] = pc[:, 3:] / 255
         #except:
         #  print(self.pc.shape)
         #  pc = torch.tensor(self.pc).cuda()[:, :6].float()

@@ -65,8 +65,8 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 70_000
-    num_bg: int = 0 ### changed to 0 # 100_000
+    num_fg: int = 30_000
+    num_bg: int = 50_000 ### changed to 0 # 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int | None = None
@@ -403,7 +403,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_fg_only_feat'
+    work_dir = './output_duster_feature_rendering_new_fg_test_com'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
