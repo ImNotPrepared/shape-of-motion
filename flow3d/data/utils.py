@@ -175,8 +175,8 @@ def get_tracks_3d_for_query_frame(
     else:
       query_feat = query_feat[None].permute(0, 3, 1, 2) 
       track_feats = F.grid_sample(
-          query_feat.double(),
-          normalize_coords(tracks_2d[query_index : query_index + 1, None], H, W).double(),
+          query_feat,
+          normalize_coords(tracks_2d[query_index : query_index + 1, None], H, W),
           align_corners=True,
           padding_mode="border",
       )[0, :, 0].T

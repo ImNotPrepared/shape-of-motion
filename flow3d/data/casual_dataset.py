@@ -323,7 +323,7 @@ class CasualDataset(BaseDataset):
         path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
         
         path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_Aligned/')
-        path = path.replace('toy_512_', 'undist_cam0') # cam0x              #############                                                                    _fg_only/
+        path = path.replace('toy_512_', 'undist_cam0')
         path = path.replace('jpg', 'npy')
         # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg
         # 
@@ -332,7 +332,7 @@ class CasualDataset(BaseDataset):
         #feature_root_path='/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512/' #undist_cam00_670/000000.npy'
         #feature_path = feature_root_path+fn 
         #print(path)
-        dinov2_feature = torch.tensor(np.load(path)).double()#.permute(2, 0, 1)
+        dinov2_feature = torch.tensor(np.load(path))#.permute(2, 0, 1)
         return dinov2_feature
 
     def load_mask(self, index) -> torch.Tensor:
@@ -379,10 +379,9 @@ class CasualDataset(BaseDataset):
 # /data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/4/disp_0.npz
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/')
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth/')
         path = path.replace('toy_512_', '')
         path = path.replace('disp_', '')
-        path = '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/' + path.split('/')[-1][:-4] + '/' + path.split('/')[-2] + '.npz'
 
         disp_map =  np.load(path)['depth']
         depth_map = np.clip(disp_map, a_min=1e-6, a_max=1e6)
