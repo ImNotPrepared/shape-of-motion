@@ -72,6 +72,7 @@ class CustomDataConfig:
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
+    video_name: str = ''
 
 
 
@@ -98,6 +99,7 @@ class CasualDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
+        video_name: str = '',
         **_,
     ):
         super().__init__()
@@ -121,10 +123,22 @@ class CasualDataset(BaseDataset):
         self.feat_dir = f"{root_dir}/{image_type}/{res}/{seq_name}"
         self.feat_ext = os.path.splitext(os.listdir(self.feat_dir)[0])[1]
 
+        # self.camera_path
+        self.video_name = video_name# '_dance'
+        self.hard_indx_dict = {
+          '_dance': [1477, 1778],
+          '': [183, 295],
+        }
+        self.glb_first_indx =  self.hard_indx_dict[self.video_name][0]
+        self.glb_last_indx = self.hard_indx_dict[self.video_name][1]
+
         self.depth_dir = f"{root_dir}/{depth_type}/{res}/{seq_name}"
         self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
+
+
+        
         #  self.cache_dir = f"datasets/davis/flow3d_preprocessed/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
 
@@ -141,6 +155,7 @@ class CasualDataset(BaseDataset):
         self.masks: list[torch.Tensor | None] = [None for _ in self.frame_names]
 
 
+
         self.debug=False
         def load_known_cameras(
             path: str, H: int, W: int, noise: bool
@@ -150,10 +165,9 @@ class CasualDataset(BaseDataset):
             c2ws = []
             #for c in range(4, 5):
             c = int(self.seq_name[-1])
-            for t in range(183, 295):
+            for t in range(self.glb_first_indx, self.glb_last_indx):
               h, w = md['hw'][c]
               k, w2c =  md['k'][t][c], np.linalg.inv(md['w2c'][t][c])
-
               if noise:
                 R = w2c[:3, :3]
                 t = w2c[:3, 3]
@@ -222,7 +236,8 @@ class CasualDataset(BaseDataset):
         if camera_type == "droid_recon":
             img = self.get_image(0)
             H, W = img.shape[:2]
-            path = "/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/Dy_train_meta.json"
+            # path = "/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/Dy_train_meta.json"
+            path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/scripts/Dy_train_meta.json'
             if self.debug:
               w2cs, Ks, tstamps = load_cameras(
                   f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
@@ -259,10 +274,10 @@ class CasualDataset(BaseDataset):
                 )
             else:
                 tracks_3d = self.get_tracks_3d(5000, step=self.num_frames // 10)[0]
-                scale, transfm = compute_scene_norm(tracks_3d, self.w2cs)
-                scene_norm_dict = SceneNormDict(scale=scale, transfm=transfm)
-                os.makedirs(self.cache_dir, exist_ok=True)
-                torch.save(scene_norm_dict, cached_scene_norm_dict_path)
+                #scale, transfm = compute_scene_norm(tracks_3d, self.w2cs)
+                #scene_norm_dict = SceneNormDict(scale=scale, transfm=transfm)
+                #os.makedirs(self.cache_dir, exist_ok=True)
+                #torch.save(scene_norm_dict, cached_scene_norm_dict_path)
 
 
     @property
@@ -321,10 +336,20 @@ class CasualDataset(BaseDataset):
     def load_feat(self, index) -> torch.Tensor:
         # path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"¸¸
         path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
-        
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_Aligned/')
-        path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
-        path = path.replace('jpg', 'npy')
+        ### examples:
+        # /data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/resized_512_Aligned_fg_only/undist_cam01 
+        #
+        # 
+        try:
+          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned/')
+          path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
+          path = path.replace('jpg', 'npy')
+          dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)
+        except:
+          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
+          path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
+          path = path.replace('jpg', 'npy')
+          dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)          
         # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg
         # 
         # /data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/undist_cam02/00000.npy
@@ -344,9 +369,14 @@ class CasualDataset(BaseDataset):
           mask = imageio.imread(path)
 
         else:
-          path = f"{self.mask_dir}/{self.frame_names[index]}.npz"
-          r = self.mask_erosion_radius
-          mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+          try:
+            path = f"{self.mask_dir}/{self.frame_names[index]}.npz"
+            r = self.mask_erosion_radius
+            mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+          except:
+            path = f"{self.mask_dir}/dyn_mask_{int(self.frame_names[index])}.npz"
+            r = self.mask_erosion_radius
+            mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
         # 2160, 3840, 1
 
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
@@ -380,12 +410,18 @@ class CasualDataset(BaseDataset):
 # /data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/4/disp_0.npz
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/')
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')
         path = path.replace('toy_512_', '')
         path = path.replace('disp_', '')
-        path = '/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/' + path.split('/')[-1][:-4] + '/' + path.split('/')[-2] + '.npz'
+        try:
+          final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/' + path.split('/')[-1][:-4] + '/' + path.split('/')[-2] + '.npz'
+          disp_map =  np.load(final_path)['depth']
+        except:
+          #/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/undist_cam01/1477.npz
 
-        disp_map =  np.load(path)['depth']
+          # /data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/1478/1.npz
+          final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/' +  path.split('/')[-1][:-4] + '/' + path.split('/')[-2][-1] + '.npz'
+          disp_map =  np.load(final_path)['depth']
         depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
         depth = torch.from_numpy(depth_map).float()
         input_tensor = depth.unsqueeze(0).unsqueeze(0) 
@@ -403,7 +439,7 @@ class CasualDataset(BaseDataset):
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         near, far = 1e-7, 7e1
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', '/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/')
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/da_v2_disp/')
         path = path.replace('toy_512_', '')
         camera_index = int(self.depth_dir[-1]) -1 
         absolute_index=index+60 ### now it is 123, 423
@@ -660,66 +696,3 @@ class CasualDataset(BaseDataset):
         )[:, 0, :, 0]
         return data
 
-class GiantCasualDataset(CasualDataset):
-    def __init__(self, dataset1: CasualDataset, dataset2: CasualDataset, dataset3: CasualDataset, dataset4: CasualDataset):
-        """
-        A dataset that merges four CasualDataset instances into one, creating a larger dataset where each item is a combination
-        of the corresponding items from the four datasets.
-        """
-        self.datasets = [dataset1, dataset2, dataset3, dataset4]
-        self.frame_names = dataset1.frame_names + dataset2.frame_names + dataset3.frame_names + dataset4.frame_names
-
-    def __len__(self):
-        """
-        The length of the merged dataset is the same as any of the individual datasets.
-        """
-        return len(self.datasets[0])
-
-    def __getitem__(self, index):
-        """
-        Returns a merged batch with elements from all four datasets at the given index.
-        """
-        data_list = [dataset[index] for dataset in self.datasets]
-
-        # Merge the data from the four datasets
-        merged_data = {}
-        for key in data_list[0].keys():
-            if isinstance(data_list[0][key], torch.Tensor):
-                merged_data[key] = torch.stack([data[key] for data in data_list], dim=0)
-            else:
-                merged_data[key] = [data[key] for data in data_list]
-
-        return merged_data
-
-
-def compute_scene_norm(
-    X: torch.Tensor, w2cs: torch.Tensor
-) -> tuple[float, torch.Tensor]:
-    """
-    :param X: [N*T, 3]
-    :param w2cs: [N, 4, 4]
-    """
-    X = X.reshape(-1, 3)
-    scene_center = X.mean(dim=0)
-    X = X - scene_center[None]
-    min_scale = X.quantile(0.05, dim=0)
-    max_scale = X.quantile(0.95, dim=0)
-    scale = (max_scale - min_scale).max().item() / 2.0
-    original_up = -F.normalize(w2cs[:, 1, :3].mean(0), dim=-1)
-    target_up = original_up.new_tensor([0.0, 0.0, 1.0])
-    R = roma.rotvec_to_rotmat(
-        F.normalize(original_up.cross(target_up), dim=-1)
-        * original_up.dot(target_up).acos_()
-    )
-    transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
-    return scale, transfm
-'''
-0.13333333333333333 0.13333333333333333 scalllllllllllllllllllllllllllllllllllllllllll
-[[237.74204102   0.         256.        ]
- [  0.         237.74204102 144.        ]
- [  0.           0.           1.        ]] scalllllllllllllllllllllllllllllllllllllllllll
-
-'''
-
-if __name__ == "__main__":
-    d = CasualDataset("bear", "/shared/vye/datasets/DAVIS", camera_type="droid_recon")

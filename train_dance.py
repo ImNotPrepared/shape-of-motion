@@ -402,12 +402,13 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_new_fg_fixed_only_as_sanity'
+    work_dir = './output_dancing_scene'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_1",
+            seq_name="undist_cam01",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -416,8 +417,9 @@ if __name__ == "__main__":
     config_2 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_2",
+            seq_name="undist_cam02",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -426,8 +428,9 @@ if __name__ == "__main__":
     config_3 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_3",
+            seq_name="undist_cam03",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -436,11 +439,23 @@ if __name__ == "__main__":
     config_4 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_4",
+            seq_name="undist_cam04",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
     )
-    main([config_1, config_2, config_3, config_4])
+    config_5 = TrainConfig(
+        work_dir=work_dir,
+        data=CustomDataConfig(
+            seq_name="undist_cam05",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+    main([config_1, config_2, config_3, config_4, config_5])

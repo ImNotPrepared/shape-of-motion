@@ -318,7 +318,7 @@ def main(cfg_1: RenderConfig, cfgs):
 
 if __name__ == "__main__":
     #work_dir = ((tyro.cli(RenderConfig)).work_dir)
-    work_dir = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/output_duster_feature_rendering_test_new_config_no_track'
+    work_dir = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/output_duster_feature_rendering_new_fg_fixed_only_as_sanity'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
