@@ -87,7 +87,11 @@ class GaussianParams(nn.Module):
 
     def get_feats(self) -> torch.Tensor:
         #assert "feats" in self.params
-        return (self.params["feats"]) #self.motion_coef_activation
+        try:
+          return (self.params["feats"]) #self.motion_coef_activation
+        except:
+          print('NOT FINDING ANY FEAT')
+          return torch.randn(self.get_colors().shape[0], 32)
 
     def densify_params(self, should_split, should_dup):
         """

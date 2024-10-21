@@ -126,11 +126,12 @@ class CasualDataset(BaseDataset):
         # self.camera_path
         self.video_name = video_name# '_dance'
         self.hard_indx_dict = {
-          '_dance': [1477, 1778],
-          '': [183, 295],
+          '_dance': [1477, 1778, 3],
+          '': [183, 295, 1],
         }
         self.glb_first_indx =  self.hard_indx_dict[self.video_name][0]
         self.glb_last_indx = self.hard_indx_dict[self.video_name][1]
+        self.glb_step = self.hard_indx_dict[self.video_name][2]
 
         self.depth_dir = f"{root_dir}/{depth_type}/{res}/{seq_name}"
         self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
@@ -146,7 +147,8 @@ class CasualDataset(BaseDataset):
             end = len(frame_names)
         self.start = start
         self.end = end
-        self.frame_names = frame_names[start:end]
+        self.frame_names = frame_names[start:end:self.glb_step]
+        frame_names=self.frame_names
         print(self.start, self.end)
 
         self.imgs: list[torch.Tensor | None] = [None for _ in self.frame_names]
@@ -165,7 +167,7 @@ class CasualDataset(BaseDataset):
             c2ws = []
             #for c in range(4, 5):
             c = int(self.seq_name[-1])
-            for t in range(self.glb_first_indx, self.glb_last_indx):
+            for t in range(self.glb_first_indx, self.glb_last_indx, self.glb_step):
               h, w = md['hw'][c]
               k, w2c =  md['k'][t][c], np.linalg.inv(md['w2c'][t][c])
               if noise:
@@ -336,20 +338,18 @@ class CasualDataset(BaseDataset):
     def load_feat(self, index) -> torch.Tensor:
         # path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"¸¸
         path = f"{self.feat_dir}/{self.frame_names[index]}{self.feat_ext}"
+        path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
+        path = path.replace('jpg', 'npy')
         ### examples:
         # /data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/resized_512_Aligned_fg_only/undist_cam01 
         #
         # 
-        try:
-          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned/')
-          path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
-          path = path.replace('jpg', 'npy')
-          dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)
-        except:
-          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
-          path = path.replace('toy_512_', 'undist_cam0') # cam0x              ############# _fg_only                                                              _fg_only/
-          path = path.replace('jpg', 'npy')
-          dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)          
+        #try:
+        #  dcpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned/')
+        #  dinov2_feature = torch.tensor(np.load(dcpath)).to(torch.float32)
+        #except:
+        ddpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
+        dinov2_feature = torch.tensor(np.load(ddpath)).to(torch.float32)          
         # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg
         # 
         # /data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/undist_cam02/00000.npy
@@ -357,7 +357,7 @@ class CasualDataset(BaseDataset):
         #feature_root_path='/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512/' #undist_cam00_670/000000.npy'
         #feature_path = feature_root_path+fn 
         #print(path)
-        dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)#.permute(2, 0, 1)
+        #dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)#.permute(2, 0, 1)
         #print(dinov2_feature.dtype, 'DDDDDtpye')
         return dinov2_feature
 

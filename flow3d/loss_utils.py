@@ -3,14 +3,89 @@ import torch
 import torch.nn.functional as F
 from sklearn.neighbors import NearestNeighbors
 
+from math import ceil, floor
 
+import torch
+
+
+def torch_quantile(
+    input: torch.Tensor,
+    q: float | torch.Tensor,
+    dim: int | None = None,
+    keepdim: bool = False,
+    *,
+    interpolation: str = "nearest",
+    out: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Better torch_quantile for one SCALAR quantile.
+
+    Using torch.kthvalue. Better than torch_quantile because:
+        - No 2**24 input size limit (pytorch/issues/67592),
+        - Much faster, at least on big input sizes.
+
+    Arguments:
+        input (torch.Tensor): See torch_quantile.
+        q (float): See torch_quantile. Supports only scalar input
+            currently.
+        dim (int | None): See torch_quantile.
+        keepdim (bool): See torch_quantile. Supports only False
+            currently.
+        interpolation: {"nearest", "lower", "higher"}
+            See torch_quantile.
+        out (torch.Tensor | None): See torch_quantile. Supports only
+            None currently.
+    """
+    # Sanitization: q
+    try:
+        q = float(q)
+        assert 0 <= q <= 1
+    except Exception:
+        raise ValueError(f"Only scalar input 0<=q<=1 is currently supported (got {q})!")
+
+    # Sanitization: dim
+    # Because one cannot pass  `dim=None` to `squeeze()` or `kthvalue()`
+    if dim_was_none := dim is None:
+        dim = 0
+        input = input.reshape((-1,) + (1,) * (input.ndim - 1))
+
+    # Sanitization: inteporlation
+    if interpolation == "nearest":
+        inter = round
+    elif interpolation == "lower":
+        inter = floor
+    elif interpolation == "higher":
+        inter = ceil
+    else:
+        raise ValueError(
+            "Supported interpolations currently are {'nearest', 'lower', 'higher'} "
+            f"(got '{interpolation}')!"
+        )
+
+    # Sanitization: out
+    if out is not None:
+        raise ValueError(f"Only None value is currently supported for out (got {out})!")
+
+    # Logic
+    k = inter(q * (input.shape[dim] - 1)) + 1
+    out = torch.kthvalue(input, k, dim, keepdim=True, out=out)[0]
+
+    # Rectification: keepdim
+    if keepdim:
+        return out
+    if dim_was_none:
+        return out.squeeze()
+    else:
+        return out.squeeze(dim)
+
+    return out
+    
 def masked_mse_loss(pred, gt, mask=None, normalize=True, quantile: float = 1.0):
     if mask is None:
         return trimmed_mse_loss(pred, gt, quantile)
     else:
         sum_loss = F.mse_loss(pred, gt, reduction="none").mean(dim=-1, keepdim=True)
         quantile_mask = (
-            (sum_loss < torch.quantile(sum_loss, quantile)).squeeze(-1)
+            (sum_loss < torch_quantile(sum_loss, quantile)).squeeze(-1)
             if quantile < 1
             else torch.ones_like(sum_loss, dtype=torch.bool).squeeze(-1)
         )
@@ -29,7 +104,7 @@ def masked_l1_loss(pred, gt, mask=None, normalize=True, quantile: float = 1.0):
     else:
         sum_loss = F.l1_loss(pred, gt, reduction="none").mean(dim=-1, keepdim=True)
         quantile_mask = (
-            (sum_loss < torch.quantile(sum_loss, quantile)).squeeze(-1)
+            (sum_loss < torch_quantile(sum_loss, quantile)).squeeze(-1)
             if quantile < 1
             else torch.ones_like(sum_loss, dtype=torch.bool).squeeze(-1)
         )
@@ -56,7 +131,7 @@ def masked_huber_loss(pred, gt, delta, mask=None, normalize=True):
 
 def trimmed_mse_loss(pred, gt, quantile=0.9):
     loss = F.mse_loss(pred, gt, reduction="none").mean(dim=-1)
-    loss_at_quantile = torch.quantile(loss, quantile)
+    loss_at_quantile = torch_quantile(loss, quantile)
     trimmed_loss = loss[loss < loss_at_quantile].mean()
     return trimmed_loss
 
@@ -64,7 +139,7 @@ def trimmed_mse_loss(pred, gt, quantile=0.9):
 def trimmed_l1_loss(pred, gt, quantile=0.9):
     loss = F.l1_loss(pred, gt, reduction="none").mean(dim=-1)
     trimmed_loss = loss.mean()
-    loss_at_quantile = torch.quantile(loss, quantile)
+    loss_at_quantile = torch_quantile(loss, quantile)
     trimmed_loss = loss[loss < loss_at_quantile].mean()
     return trimmed_loss
 
@@ -82,22 +157,22 @@ def torch_quantile(
     interpolation: str = "nearest",
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Better torch.quantile for one SCALAR quantile.
+    """Better torch_quantile for one SCALAR quantile.
 
-    Using torch.kthvalue. Better than torch.quantile because:
+    Using torch.kthvalue. Better than torch_quantile because:
         - No 2**24 input size limit (pytorch/issues/67592),
         - Much faster, at least on big input sizes.
 
     Arguments:
-        input (torch.Tensor): See torch.quantile.
-        q (float): See torch.quantile. Supports only scalar input
+        input (torch.Tensor): See torch_quantile.
+        q (float): See torch_quantile. Supports only scalar input
             currently.
-        dim (int | None): See torch.quantile.
-        keepdim (bool): See torch.quantile. Supports only False
+        dim (int | None): See torch_quantile.
+        keepdim (bool): See torch_quantile. Supports only False
             currently.
         interpolation: {"nearest", "lower", "higher"}
-            See torch.quantile.
-        out (torch.Tensor | None): See torch.quantile. Supports only
+            See torch_quantile.
+        out (torch.Tensor | None): See torch_quantile. Supports only
             None currently.
     """
     # Sanitization: q

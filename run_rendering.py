@@ -37,6 +37,7 @@ def main(cfg: RenderConfig):
         device,
         work_dir=cfg.work_dir,
         port=cfg.port,
+        fg_only=True
     )
 
     guru.info(f"Starting rendering from {renderer.global_step=}")

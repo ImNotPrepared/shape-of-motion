@@ -26,8 +26,8 @@ class Renderer:
 
         self.data_path = '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/'
         self.feat_base = None
-        #with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
-        #  self.feat_base = pickle.load(f)
+        with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
+          self.feat_base = pickle.load(f)
 
 
         if self.model is None:
@@ -131,7 +131,7 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/fg_pc.npz'
+        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/{t+1477}/fg_pc.npz'
         pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
         #pc[:, 3:] = pc[:, 3:] / 255
         #except:
@@ -202,8 +202,11 @@ class Renderer:
         W, H = img_wh
 
         focal = 0.5 * H / np.tan(0.5 * camera_state.fov).item()
+        cx, cy =  W / 2.0, H / 2.0
+        cx -= 0.5
+        cy -= 0.5
         K = torch.tensor(
-            [[focal, 0.0, W / 2.0], [0.0, focal, H / 2.0], [0.0, 0.0, 1.0]],
+            [[focal, 0.0, cx], [0.0, focal, cy], [0.0, 0.0, 1.0]],
             device=self.device,
         )
         w2c = torch.linalg.inv(
@@ -217,7 +220,30 @@ class Renderer:
         self.model.training = False
         #fg_only=True
         img = self.model.render(t, w2c[None], K[None], img_wh, fg_only=True)["img"][0]
+        feat = self.model.render(t, w2c[None], K[None], img_wh, fg_only=True)["feat"][0]
+
+
+
         if not self.viewer._render_track_checkbox.value:
+            if self.feat_base:
+              # feat: torch.Size([1029, 2048, 32])
+              pca_features = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
+              #print(pca_feat.shape, img.cpu().numpy().min(), img.cpu().numpy().max(),)
+              #pca_feat = pca_feat.reshape(feat.shape[0], feat.shape[1], -1)
+              #print(pca_feat.shape, pca_feat.min(), pca_feat.max())
+              pca_features_norm = (pca_features - pca_features.min()) / (pca_features.max() - pca_features.min())
+              pca_features_norm = (pca_features_norm * 255).astype(np.uint8)
+              
+              # Reconstruct full image
+              full_pca_features = np.zeros((pca_features.shape[0], 3), dtype=np.uint8)
+              #if mask is not None:
+              #    full_pca_features[mask_flat] = pca_features_norm
+              #else:
+              full_pca_features = pca_features_norm
+              pca_features_image = full_pca_features.reshape(feat.shape[0], feat.shape[1], 3)
+              
+              return pca_features_image
+              
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
         else:
             assert t is not None

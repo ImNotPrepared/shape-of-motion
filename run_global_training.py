@@ -64,12 +64,12 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 70_000
+    num_fg: int = 500_000
     num_bg: int = 50_000 ### changed to 0 # 100_000
-    num_motion_bases: int = 10
-    num_epochs: int = 500
-    port: int | None = None
-    vis_debug: bool = False 
+    num_motion_bases: int = 7
+    num_epochs: int = 700
+    port: int | None = 2882
+    vis_debug: bool = True 
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
@@ -108,9 +108,6 @@ def main(cfgs):
     train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
     train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
     train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
-
-
-
 
     debug=False
 
@@ -189,13 +186,6 @@ def main(cfgs):
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
-def get_2d_vis(dataset, tracks_3d):
-  imgs = dataset.get_images()
-  Ks = dataset.get_Ks()
-  w2cs = dataset.get_w2cs()
-  #tracks_3d = dataset.get_tracks_3d(5000, step=111 // 10)[0]
-  vis_tracks_2d_video('./flow3d/vis/test.gif', imgs, tracks_3d, Ks, w2cs)
-
 
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
@@ -217,7 +207,22 @@ def initialize_and_checkpoint_model(
     motion_bases_fuse = []
     bg_params_fuse = []
 
+    fg_params, motion_bases, bg_params, tracks_3d = init_model_from_unified_tracks(
+        train_datasets,
+        cfg.num_fg,
+        cfg.num_bg,
+        cfg.num_motion_bases,
+        vis=vis,
+        port=port,
+    )
     for train_dataset in train_datasets:
+        Ks = train_dataset.get_Ks().to(device)
+        w2cs = train_dataset.get_w2cs().to(device)
+        Ks_fuse.append(Ks)
+        w2cs_fuse.append(w2cs)
+
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1400)
+    '''for train_dataset in train_datasets:
         # Initialize model from tracks
 
         fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
@@ -229,31 +234,27 @@ def initialize_and_checkpoint_model(
             port=port,
         )
         # Get camera intrinsic matrices and world-to-camera transformations
-        to_feed_xyz = tracks_3d.xyz.clone().detach()
-
-        # vis tracker
-        # get_2d_vis(train_dataset, to_feed_xyz)
-
-
         Ks = train_dataset.get_Ks().to(device)
         w2cs = train_dataset.get_w2cs().to(device)
 
 
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1400)
+        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1000)
         #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
         fg_params_fuse.append(fg_params)
         motion_bases_fuse.append(motion_bases)
 
-        bg_params_fuse.append(bg_params)
+        bg_params_fuse.append(bg_params)'''
         
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
-
-
-    prefix="params."
+    if vis and cfg.port is not None:
+        server = get_server(port=cfg.port)
+        vis_init_params(server, fg_params, motion_bases)
+    model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
+    '''prefix="params."
 
     fg_state_dict_fused = {} 
 
@@ -312,22 +313,94 @@ def initialize_and_checkpoint_model(
 
     fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
     motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-
-    if bg_params is None:
-      bg_params_fused = None
-    else:
-      bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
+    bg_params_fused = None
+    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
 
     #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
     #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
 
 
-    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)
+    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)'''
     print('SANITY_CCCCHECK', model.fg.get_coefs().shape, model.fg.get_colors().shape)
 
     guru.info(f"Saving initialization to {ckpt_path}")
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
+
+
+def init_model_from_unified_tracks(
+    train_datasets,
+    num_fg: int,
+    num_bg: int,
+    num_motion_bases: int,
+    vis: bool = False,
+    port: int | None = None,
+):
+
+    train_dataset1 = train_datasets[0]
+    train_dataset2 = train_datasets[1]
+    train_dataset3 = train_datasets[2]
+    train_dataset4 = train_datasets[3]
+
+
+    # Assuming each dataset returns multiple components as PyTorch tensors
+    tracks_3d_1, visibles_1, invisibles_1, confidences_1, colors_1, feats_1 = train_dataset1.get_tracks_3d(num_fg)
+    tracks_3d_2, visibles_2, invisibles_2, confidences_2, colors_2, feats_2 = train_dataset2.get_tracks_3d(num_fg)
+    tracks_3d_3, visibles_3, invisibles_3, confidences_3, colors_3, feats_3 = train_dataset3.get_tracks_3d(num_fg)
+    tracks_3d_4, visibles_4, invisibles_4, confidences_4, colors_4, feats_4 = train_dataset4.get_tracks_3d(num_fg)
+
+    # Concatenate each component separately using torch.cat
+    combined_tracks_3d = torch.cat((tracks_3d_1, tracks_3d_2, tracks_3d_3, tracks_3d_4), dim=0)
+    combined_visibles = torch.cat((visibles_1, visibles_2, visibles_3, visibles_4), dim=0)
+    combined_invisibles = torch.cat((invisibles_1, invisibles_2, invisibles_3, invisibles_4), dim=0)
+    combined_confidences = torch.cat((confidences_1, confidences_2, confidences_3, confidences_4), dim=0)
+    combined_colors = torch.cat((colors_1, colors_2, colors_3, colors_4), dim=0)
+    combined_feats = torch.cat((feats_1, feats_2, feats_3, feats_4), dim=0)
+
+    # You can now return or use the combined dataset
+    combined_data = (combined_tracks_3d, combined_visibles, combined_invisibles, combined_confidences, combined_colors, combined_feats)
+
+    print('track3d shape', tracks_3d_1.shape, tracks_3d_2.shape, tracks_3d_3.shape, tracks_3d_4.shape)
+    tracks_3d = TrackObservations(*combined_data)
+    rot_type = "6d"
+    cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
+        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
+    )
+
+
+    motion_bases = motion_bases.to(device)
+    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
+    fg_params = fg_params.to(device)
+
+    bg_params = None
+    if num_bg > 0:
+
+        bg_points_1, bg_normals_1, bg_colors_1, bg_feats_1 = train_dataset1.get_bkgd_points(num_fg)
+        bg_points_2, bg_normals_2, bg_colors_2, bg_feats_2 = train_dataset2.get_bkgd_points(num_fg)
+        bg_points_3, bg_normals_3, bg_colors_3, bg_feats_3 = train_dataset3.get_bkgd_points(num_fg)
+        bg_points_4, bg_normals_4, bg_colors_4, bg_feats_4 = train_dataset4.get_bkgd_points(num_fg)
+
+        # Concatenate each component separately using torch.cat
+        combined_bg_points = torch.cat((bg_points_1, bg_points_2, bg_points_3, bg_points_4), dim=0)
+        combined_bg_normals = torch.cat((bg_normals_1, bg_normals_2, bg_normals_3, bg_normals_4), dim=0)
+        combined_bg_colors = torch.cat((bg_colors_1, bg_colors_2, bg_colors_3, bg_colors_4), dim=0)
+        combined_bg_feats = torch.cat((bg_feats_1, bg_feats_2, bg_feats_3, bg_feats_4), dim=0)
+
+        # You can now return or use the combined background dataset
+        combined_bg_data = (combined_bg_points, combined_bg_normals, combined_bg_colors, combined_bg_feats)
+
+
+        bg_points = StaticObservations(*combined_bg_data)
+        assert bg_points.check_sizes()
+        bg_params = init_bg(bg_points)
+        bg_params = bg_params.to(device)
+
+    tracks_3d = tracks_3d.to(device)
+    return fg_params, motion_bases, bg_params, tracks_3d
+
 
 
 def init_model_from_tracks(
@@ -339,23 +412,11 @@ def init_model_from_tracks(
     port: int | None = None,
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
-    '''
-    for k in train_dataset.get_tracks_3d(num_fg):
-      print(k.shape)
-    torch.Size([5724, 112, 3])
-    torch.Size([5724, 112])
-    torch.Size([5724, 112])
-    torch.Size([5724, 112])
-    torch.Size([5724, 3])
-    torch.Size([5724, 32])
-    '''
-
     print(
         f"{tracks_3d.xyz.shape=} {tracks_3d.visibles.shape=} "
         f"{tracks_3d.invisibles.shape=} {tracks_3d.confidences.shape} "
         f"{tracks_3d.colors.shape}"
     )
-    print( tracks_3d.xyz.shape, tracks_3d.feats.shape)
     if not tracks_3d.check_sizes():
         import ipdb
 
@@ -394,7 +455,6 @@ def backup_code(work_dir):
             shutil.copytree(tracked_dir, osp.join(dst_dir, osp.basename(tracked_dir)))
 
 
-
 if __name__ == "__main__":
     import wandb 
     import argparse
@@ -402,13 +462,12 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_dancing_scene_sampled'
+    work_dir = './output_duster_feature_jointly_change_quantile_test'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="undist_cam01",
+            seq_name="toy_512_1",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -417,9 +476,8 @@ if __name__ == "__main__":
     config_2 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="undist_cam02",
+            seq_name="toy_512_2",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -428,9 +486,8 @@ if __name__ == "__main__":
     config_3 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="undist_cam03",
+            seq_name="toy_512_3",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -439,23 +496,11 @@ if __name__ == "__main__":
     config_4 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="undist_cam04",
+            seq_name="toy_512_4",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
         optim=tyro.cli(OptimizerConfig),
     )
-    config_5 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam05",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    main([config_1, config_2, config_3, config_4, config_5])
+    main([config_1, config_2, config_3, config_4])

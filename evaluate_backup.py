@@ -96,40 +96,6 @@ def interpolate_extrinsics(extrinsics1, extrinsics2, alpha):
 
     return extrinsics_interp
 
-def data_prep(lis):
-  for iiiindex, c in sorted(enumerate(lis)):
-    t=0
-    fn = md['fn'][t][c]
-    filename=f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}"
-    raw_image = cv2.imread(filename)
-    h, w = md['hw'][c]
-    k, w2c =  torch.tensor(md['k'][t][c]), np.linalg.inv(md['w2c'][t][c])
-    fn = md['fn'][t][c]
-    im = np.array(copy.deepcopy(Image.open(f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}")))
-    im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
-    im=im.clip(0,1)
-    
-    ############################## First Frame Depth #############################
-    depth_path=f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
-    depth = torch.tensor(np.load(depth_path)['depth_map'])
-    assert depth.shape[1] !=  depth.shape[0]
-
-    ################DOING REGULAR VIS #################
-    scale, shift = scales_shifts[c-1404]
-    disp_map = depth
-    nonzero_mask = disp_map != 0
-    disp_map[nonzero_mask] = disp_map[nonzero_mask] * scale + shift
-    valid_depth_mask = (disp_map > 0) & (disp_map <= far)
-    disp_map[~valid_depth_mask] = 0
-    depth_map = np.full(disp_map.shape, np.inf)
-    depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
-    depth_map[depth_map == np.inf] = 0
-    depth_map = depth_map.astype(np.float32)
-    depth = torch.tensor(depth_map)
-
-  return depth, torch.tensor(k).float(), torch.tensor(w2c).float(), h, w, im
-
-
 def main(cfg_1: RenderConfig, cfgs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -246,38 +212,6 @@ def main(cfg_1: RenderConfig, cfgs):
     losses = 0
     seq='cmu_bike'
     md = json.load(open(f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{seq}/train_meta.json", 'r'))
-    def data_prep(lis):
-      for iiiindex, c in sorted(enumerate(lis)):
-        t=0
-        fn = md['fn'][t][c]
-        filename=f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}"
-        raw_image = cv2.imread(filename)
-        h, w = md['hw'][c]
-        k, w2c =  torch.tensor(md['k'][t][c]), np.linalg.inv(md['w2c'][t][c])
-        fn = md['fn'][t][c]
-        im = np.array(copy.deepcopy(Image.open(f"/ssd0/zihanwa3/data_ego/{seq}/ims/{fn}")))
-        im = torch.tensor(im).float().cuda().permute(2, 0, 1) / 255
-        im=im.clip(0,1)
-        
-        ############################## First Frame Depth #############################
-        depth_path=f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
-        depth = torch.tensor(np.load(depth_path)['depth_map'])
-        assert depth.shape[1] !=  depth.shape[0]
-
-        ################DOING REGULAR VIS #################
-        #cale, shift = scales_shifts[c-1404]
-        disp_map = depth
-        nonzero_mask = disp_map != 0
-        disp_map[nonzero_mask] = disp_map[nonzero_mask] #* scale + shift
-        valid_depth_mask = (disp_map > 0) & (disp_map <= far)
-        disp_map[~valid_depth_mask] = 0
-        depth_map = np.full(disp_map.shape, np.inf)
-        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
-        depth_map[depth_map == np.inf] = 0
-        depth_map = depth_map.astype(np.float32)
-        depth = torch.tensor(depth_map)
-
-      return depth, torch.tensor(k).float(), torch.tensor(w2c).float(), h, w, im
 
 
     with open('/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/extrinsics_interpolated.json', 'r') as json_file:

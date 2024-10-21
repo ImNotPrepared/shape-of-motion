@@ -67,7 +67,7 @@ class TrainConfig:
     num_fg: int = 70_000
     num_bg: int = 50_000 ### changed to 0 # 100_000
     num_motion_bases: int = 10
-    num_epochs: int = 500
+    num_epochs: int = 1
     port: int | None = None
     vis_debug: bool = False 
     batch_size: int = 8
@@ -402,7 +402,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_rendering_new_fg_fixed_only_as_sanity'
+    work_dir = './output_duster_feature_init'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
