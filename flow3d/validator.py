@@ -32,10 +32,10 @@ class Validator:
         self,
         model: SceneModel,
         device: torch.device,
-        train_loader: DataLoader | None,
-        val_img_loader: DataLoader | None,
-        val_kpt_loader: DataLoader | None,
-        save_dir: str,
+        train_loader: DataLoader | None = None,
+        val_img_loader: DataLoader | None = None,
+        val_kpt_loader: DataLoader | None = None,
+        save_dir: str | None = None,
     ):
         self.model = model
         self.device = device
@@ -243,7 +243,7 @@ class Validator:
             return
         video_dir = osp.join(self.save_dir, "videos", f"epoch_{epoch:04d}")
         os.makedirs(video_dir, exist_ok=True)
-        fps = getattr(self.train_loader.dataset.dataset, "fps", 15.0)
+        fps = 15.0
         # Render video.
         video = []
         ref_pred_depths = []

@@ -19,21 +19,31 @@ class Renderer:
         pc_dir: str | None = None,
         port: int | None = None,
         fg_only: int | None = None,
+        seq_name: str | None = 'dance'
     ):
         self.device = device
 
         self.model = model
 
-        self.data_path = '/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/'
+
+        self.pc_dict = {
+          'bike': ['/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/', 111],
+          'dance': ['/data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/', 100],
+        }
+
+        self.data_path = self.pc_dict[seq_name][0]
+        self.seq_name = seq_name
+
+
         self.feat_base = None
-        with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
-          self.feat_base = pickle.load(f)
+        #with open(self.data_path+'fitted_pca_model.pkl', 'rb') as f:
+        #  self.feat_base = pickle.load(f)
 
 
         if self.model is None:
           self.pc = init_pt_cld = np.load(pc_dir)#["data"]
 
-          self.num_frames = 111 ##len(self.pc.keys())
+          self.num_frames = self.pc_dict[seq_name][1]# 111 ##len(self.pc.keys())
 
           if self.num_frames == 1:
             self.pc = np.load(pc_dir)["data"]
@@ -131,7 +141,12 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/{t+1477}/fg_pc.npz'
+        if self.seq_name == 'bike':
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_4_2.7/{t+1477}/fg_pc.npz'
+
+        elif self.seq_name == 'dance':
+          t = t * 3
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_4_2.7/{t+1477}/fg_pc.npz'
         pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
         #pc[:, 3:] = pc[:, 3:] / 255
         #except:
@@ -243,7 +258,7 @@ class Renderer:
               pca_features_image = full_pca_features.reshape(feat.shape[0], feat.shape[1], 3)
               
               return pca_features_image
-              
+
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
         else:
             assert t is not None

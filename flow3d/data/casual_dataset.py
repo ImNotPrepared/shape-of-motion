@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from functools import partial
 from typing import Literal, cast
-
+from torch.utils.data import Dataset
 import cv2
 import imageio
 import numpy as np
@@ -326,10 +326,18 @@ class CasualDataset(BaseDataset):
         mask = cast(torch.Tensor, self.masks[index])
         return mask
 
+    def get_masks(self):
+        masks = [cast(torch.Tensor, self.load_mask(index)) for index in range(len(self.frame_names))]
+        return masks
+
     def get_depth(self, index) -> torch.Tensor:
         if self.depths[index] is None:
             self.depths[index] = self.load_depth(index)
         return self.depths[index] #/ self.scale
+
+    def get_depths(self):
+        depths = [cast(torch.Tensor, self.load_depth(index)) for index in range(len(self.frame_names))]
+        return depths
 
     def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}{self.img_ext}"
@@ -490,6 +498,7 @@ class CasualDataset(BaseDataset):
             end = num_frames + 1 + end
         query_idcs = list(range(start, end, step))
         target_idcs = list(range(start, end, step))
+
         masks = torch.stack([self.get_mask(i) for i in target_idcs], dim=0)
         fg_masks = (masks == 1).float()
         depths = torch.stack([self.get_depth(i) for i in target_idcs], dim=0)
@@ -521,6 +530,8 @@ class CasualDataset(BaseDataset):
             )
   
             tracks_all_queries.append(tracks_tuple)
+
+
         tracks_3d, colors, feats, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
         )
@@ -696,3 +707,29 @@ class CasualDataset(BaseDataset):
         )[:, 0, :, 0]
         return data
 
+
+class CasualDatasetVideoView(Dataset):
+    """Return a dataset view of the video trajectory."""
+
+    def __init__(self, dataset: CasualDataset):
+        super().__init__()
+        self.dataset = dataset
+        self.fps = 15
+        self.imgs = self.dataset.get_images()
+        self.masks = self.dataset.get_masks()
+        self.depths = self.dataset.get_depths()
+
+    def __len__(self):
+        return self.dataset.num_frames
+
+    def __getitem__(self, index):
+
+        return {
+            "frame_names": self.dataset.frame_names[index],
+            "ts": index,
+            "w2cs": self.dataset.w2cs[index],
+            "Ks": self.dataset.Ks[index],
+            "imgs": self.imgs[index],
+            "depths": self.depths[index],
+            "masks": self.masks[index],
+        }

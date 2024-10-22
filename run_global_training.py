@@ -69,7 +69,7 @@ class TrainConfig:
     num_motion_bases: int = 7
     num_epochs: int = 700
     port: int | None = 2882
-    vis_debug: bool = True 
+    vis_debug: bool = False 
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
@@ -100,7 +100,7 @@ def main(cfgs):
           collate_fn=BaseDataset.train_collate_fn,
       )
 
-      train_list.append((train_loader , train_loader, train_dataset))
+      train_list.append((train_video_view, train_loader, train_dataset))
 
 
 
@@ -151,6 +151,47 @@ def main(cfgs):
     train_loader_2 = train_list[2][1]
     train_loader_3 = train_list[3][1]
 
+    train_video_view_0 = train_list[0][0]
+    train_video_view_1 = train_list[1][0]
+    train_video_view_2 = train_list[2][0]
+    train_video_view_3 = train_list[3][0]
+    
+    validator_0 = Validator(
+        model=trainer.model,
+        device=device,
+        train_loader=(
+            DataLoader(train_video_view_0, batch_size=1)
+        ),
+        save_dir=os.path.join(cfg.work_dir, 'cam_1'),
+    )
+
+    validator_1 = Validator(
+        model=trainer.model,
+        device=device,
+        train_loader=(
+            DataLoader(train_video_view_1, batch_size=1)
+        ),
+        save_dir=os.path.join(cfg.work_dir, 'cam_2'),
+    )
+
+    validator_2 = Validator(
+        model=trainer.model,
+        device=device,
+        train_loader=(
+            DataLoader(train_video_view_2, batch_size=1)
+        ),
+        save_dir=os.path.join(cfg.work_dir, 'cam_3'),
+    )
+    validator_3 = Validator(
+        model=trainer.model,
+        device=device,
+        train_loader=(
+            DataLoader(train_video_view_3, batch_size=1)
+        ),
+        save_dir=os.path.join(cfg.work_dir, 'cam_4'),
+    )
+
+
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
         pbar := tqdm(
@@ -187,6 +228,16 @@ def main(cfgs):
             pbar.set_description(f"Loss: {loss:.6f}")
 
 
+        if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
+            epoch == cfg.num_epochs - 1
+        ):
+          validator_0.save_train_videos(epoch)
+          validator_1.save_train_videos(epoch)
+          validator_2.save_train_videos(epoch)
+          validator_3.save_train_videos(epoch)
+
+
+
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
     train_datasets: list[BaseDataset], #train_dataset: BaseDataset, 
@@ -221,107 +272,13 @@ def initialize_and_checkpoint_model(
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1400)
-    '''for train_dataset in train_datasets:
-        # Initialize model from tracks
-
-        fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-            train_dataset,
-            cfg.num_fg,
-            cfg.num_bg,
-            cfg.num_motion_bases,
-            vis=vis,
-            port=port,
-        )
-        # Get camera intrinsic matrices and world-to-camera transformations
-        Ks = train_dataset.get_Ks().to(device)
-        w2cs = train_dataset.get_w2cs().to(device)
-
-
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1000)
-        #print(fg_params.shape, motion_bases.shape)#, tracks_3d, Ks, w2cs)
-        Ks_fuse.append(Ks)
-        w2cs_fuse.append(w2cs)
-        fg_params_fuse.append(fg_params)
-        motion_bases_fuse.append(motion_bases)
-
-        bg_params_fuse.append(bg_params)'''
-        
-
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=4)
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
     if vis and cfg.port is not None:
         server = get_server(port=cfg.port)
         vis_init_params(server, fg_params, motion_bases)
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
-    '''prefix="params."
-
-    fg_state_dict_fused = {} 
-
-    for key in fg_params_fuse[0].params.keys():
-        print(key)
-        fg_state_dict_fused[prefix+key] = torch.cat(
-            [fg_params.params[key] for fg_params in fg_params_fuse], dim=0
-        )
-
-    nummms0 = len(fg_params_fuse[0].params['motion_coefs'])
-    nummms1 = len(fg_params_fuse[1].params['motion_coefs'])
-    nummms2 = len(fg_params_fuse[2].params['motion_coefs'])
-    nummms3 = len(fg_params_fuse[3].params['motion_coefs'])
-
-    base_nummms0 = fg_params_fuse[0].params['motion_coefs'].shape[1]
-    base_nummms1 = fg_params_fuse[1].params['motion_coefs'].shape[1]
-    base_nummms2 = fg_params_fuse[2].params['motion_coefs'].shape[1]
-    base_nummms3 = fg_params_fuse[3].params['motion_coefs'].shape[1]
-    to_init = torch.zeros((len(fg_state_dict_fused[prefix+'motion_coefs']), base_nummms0+base_nummms1+base_nummms2+base_nummms3))
-
-
-    if debug:
-      to_init[:nummms0, :10] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, 10:20] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, 20:30] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, 30:] = fg_params_fuse[3].params['motion_coefs']
-
-    else: 
-      to_init[:nummms0, :base_nummms0] = fg_params_fuse[0].params['motion_coefs']
-      to_init[nummms0:nummms1+nummms0, base_nummms0:base_nummms0+base_nummms1] = fg_params_fuse[1].params['motion_coefs']
-      to_init[nummms1+nummms0:nummms2+nummms1+nummms0, base_nummms0+base_nummms1:base_nummms0+base_nummms1+base_nummms2] = fg_params_fuse[2].params['motion_coefs']
-      to_init[nummms2+nummms1+nummms0:, base_nummms0+base_nummms1+base_nummms2:] = fg_params_fuse[3].params['motion_coefs']
-
-
-    fg_state_dict_fused[prefix+'motion_coefs'] = to_init
-
-    bg_state_dict_fused = {} 
-
-    try:
-      for key in bg_params_fuse[0].params.keys():
-          bg_state_dict_fused[prefix+key] = torch.cat(
-              [bg_params.params[key] for bg_params in bg_params_fuse], dim=0
-          )
-    except:
-      print('NO_BG')
-
-    #fg_params_fuse[0].scene_center
-    #for key in ['scene_center', 'scene_scale']:
-    #    fg_state_dict_fused[key] = torch.cat(
-    #        [fg_params[key] for fg_params in fg_params_fuse], dim=0
-    #    )
-        
-    motion_bases_state_dict_fused = {}
-    for key in motion_bases_fuse[0].params.keys():
-        motion_bases_state_dict_fused[prefix+key] = torch.cat([d.params[key] for d in motion_bases_fuse], dim=0)
-
-    fg_params_fused = GaussianParams.init_from_state_dict(fg_state_dict_fused)
-    motion_bases_fused = MotionBases.init_from_state_dict(motion_bases_state_dict_fused)
-    bg_params_fused = None
-    bg_params_fused = GaussianParams.init_from_state_dict(bg_state_dict_fused)
-
-    #fg_params_fuse = torch.cat(fg_params_fuse, dim=0)  # Flatten fg_params
-    #motion_bases_fuse = torch.cat(motion_bases_fuse, dim=0)  # Flatten motion_bases
-
-
-    model = SceneModel(Ks_fuse, w2cs_fuse, fg_params_fused, motion_bases_fused, bg_params_fused)'''
-    print('SANITY_CCCCHECK', model.fg.get_coefs().shape, model.fg.get_colors().shape)
 
     guru.info(f"Saving initialization to {ckpt_path}")
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
@@ -462,7 +419,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_duster_feature_jointly_change_quantile_test'
+    work_dir = './output_valid_test'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
