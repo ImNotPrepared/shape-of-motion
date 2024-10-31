@@ -36,7 +36,7 @@ class SceneLRConfig:
 
 @dataclass
 class LossesConfig:
-    w_rgb: float = 7.0
+    w_rgb: float = 3.0
     w_feat: float = 7.0 #0.01
     w_depth_reg: float = 0.5
     w_depth_const: float = 0.1

@@ -98,17 +98,18 @@ def interpolate_extrinsics(extrinsics1, extrinsics2, alpha):
 
 def main(cfg_1: RenderConfig, cfgs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
     ckpt_path = f"{cfg_1.work_dir}/checkpoints/last.ckpt"
     assert os.path.exists(ckpt_path)
-
     renderer = Renderer.init_from_checkpoint(
         ckpt_path,
         device,
         work_dir=cfg_1.work_dir,
         port=None,
     )
+
+
+
+
     base_data_path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego'
     seq='cmu_bike'
 
@@ -212,15 +213,11 @@ def main(cfg_1: RenderConfig, cfgs):
     losses = 0
     seq='cmu_bike'
     md = json.load(open(f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{seq}/train_meta.json", 'r'))
-
-
     with open('/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/extrinsics_interpolated.json', 'r') as json_file:
         extrinsics_results = json.load(json_file)
 
     # Print or access the extrinsics for specific pairs
     for cam_index, cams in extrinsics_results.items():
-      #print(cam)
-      #print(np.array(cam).shape)
       for gggg, cam in enumerate(cams):
         w2c, k = cam 
         w2c, k = (np.array(w2c), np.array(k))

@@ -343,10 +343,10 @@ def init_model_from_unified_tracks(
     bg_params = None
     if num_bg > 0:
 
-        bg_points_1, bg_normals_1, bg_colors_1, bg_feats_1 = train_dataset1.get_bkgd_points(num_fg)
-        bg_points_2, bg_normals_2, bg_colors_2, bg_feats_2 = train_dataset2.get_bkgd_points(num_fg)
-        bg_points_3, bg_normals_3, bg_colors_3, bg_feats_3 = train_dataset3.get_bkgd_points(num_fg)
-        bg_points_4, bg_normals_4, bg_colors_4, bg_feats_4 = train_dataset4.get_bkgd_points(num_fg)
+        bg_points_1, bg_normals_1, bg_colors_1, bg_feats_1 = train_dataset1.get_bkgd_points(num_bg)
+        bg_points_2, bg_normals_2, bg_colors_2, bg_feats_2 = train_dataset2.get_bkgd_points(num_bg)
+        bg_points_3, bg_normals_3, bg_colors_3, bg_feats_3 = train_dataset3.get_bkgd_points(num_bg)
+        bg_points_4, bg_normals_4, bg_colors_4, bg_feats_4 = train_dataset4.get_bkgd_points(num_bg)
         #bg_points_5, bg_normals_5, bg_colors_5, bg_feats_5 = train_dataset5.get_bkgd_points(num_fg)
 
         # Concatenate each component separately using torch.cat
@@ -428,7 +428,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './results_dance/output_noC_10O_dancing_w_depth_w_track'
+    work_dir = './results_dance/output_noC_test_dancing_w_depth_w_track'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
