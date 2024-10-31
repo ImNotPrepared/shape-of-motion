@@ -402,7 +402,7 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './output_dancing_scene_sampled_fg_only_true'
+    work_dir = './output_dancing_scene_sampled_fg_only_true_wo_depth'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(

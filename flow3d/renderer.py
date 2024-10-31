@@ -89,7 +89,7 @@ class Renderer:
           self.tracks_3d = self.model.compute_poses_fg(
               #  torch.arange(max(0, t - 20), max(1, t), device=self.device),
               torch.arange(self.num_frames, device=self.device),
-              inds=torch.arange(10, device=self.device),
+              inds=torch.arange(49, device=self.device),
           )[0]
 
     @staticmethod
@@ -141,13 +141,31 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
+        self.seq_name='monst3r'
         if self.seq_name == 'bike':
-          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_4_2.7/{t+1477}/fg_pc.npz'
-
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
+          pc = np.load(pc_dir)["data"]
         elif self.seq_name == 'dance':
           t = t * 3
-          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_4_2.7/{t+1477}/fg_pc.npz'
-        pc = torch.tensor(np.load(pc_dir)["data"]).cuda()[:, :6].float()
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/{t+1477}/pc.npz'
+          pc = np.load(pc_dir)["data"]
+        elif self.seq_name == 'monst3r':
+          t = t * 3
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512/{t+1477}/bg_pc.npz'
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
+          pc = np.load(pc_dir)
+        elif self.seq_name == 'dust3r':
+          t = t * 3
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_new_pc/{t+1477}/pc.npz'
+        elif self.seq_name == 'woc':
+          t = t * 3
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/{t+1477}/pc.npz'
+
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
+          pc = np.load(pc_dir)["data"]
+
+        pc = torch.tensor(pc).cuda()[:, :6].float()
         #pc[:, 3:] = pc[:, 3:] / 255
         #except:
         #  print(self.pc.shape)
@@ -234,8 +252,8 @@ class Renderer:
         )
         self.model.training = False
         #fg_only=True
-        img = self.model.render(t, w2c[None], K[None], img_wh, fg_only=True)["img"][0]
-        feat = self.model.render(t, w2c[None], K[None], img_wh, fg_only=True)["feat"][0]
+        img = self.model.render(t, w2c[None], K[None], img_wh, fg_only=False)["img"][0]
+        feat = self.model.render(t, w2c[None], K[None], img_wh, fg_only=False)["feat"][0]
 
 
 

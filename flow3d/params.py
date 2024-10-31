@@ -91,7 +91,7 @@ class GaussianParams(nn.Module):
           return (self.params["feats"]) #self.motion_coef_activation
         except:
           print('NOT FINDING ANY FEAT')
-          return torch.randn(self.get_colors().shape[0], 32)
+          return torch.randn(self.get_colors().shape[0], 32).cuda()
 
     def densify_params(self, should_split, should_dup):
         """

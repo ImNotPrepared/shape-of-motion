@@ -95,7 +95,6 @@ def get_tracks_3d_for_query_frame(
     T, H, W = depths.shape
     query_img = query_img[None].permute(0, 3, 1, 2)  # (1, 3, H, W)
 
-
     tracks_2d = tracks_2d.swapaxes(0, 1)  # (T, N, 4)
     tracks_2d, occs, dists = (
         tracks_2d[..., :2],

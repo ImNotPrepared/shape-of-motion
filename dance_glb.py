@@ -64,16 +64,16 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 500_000
+    num_fg: int = 150_000
     num_bg: int = 50_000 ### changed to 0 # 100_000
-    num_motion_bases: int = 14
+    num_motion_bases: int = 11
     num_epochs: int = 500
-    port: int | None = 2882
+    port: int | None = None
     vis_debug: bool = False 
     batch_size: int = 8
     num_dl_workers: int = 4
-    validate_every: int = 50
-    save_videos_every: int = 70
+    validate_every: int = 100
+    save_videos_every: int = 100
 
 
 def main(cfgs):
@@ -108,7 +108,7 @@ def main(cfgs):
     train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
     train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
     train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
-
+    #train_dataset_4 = train_list[4][-1]#.train_step(batch_3)
     debug=False
 
 
@@ -127,7 +127,7 @@ def main(cfgs):
 
       initialize_and_checkpoint_model(
           cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3, ],
+          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3],
           device,
           ckpt_path,
           vis=cfg.vis_debug,
@@ -150,11 +150,13 @@ def main(cfgs):
     train_loader_1 = train_list[1][1]
     train_loader_2 = train_list[2][1]
     train_loader_3 = train_list[3][1]
+    #train_loader_4 = train_list[4][1]
 
     train_video_view_0 = train_list[0][0]
     train_video_view_1 = train_list[1][0]
     train_video_view_2 = train_list[2][0]
     train_video_view_3 = train_list[3][0]
+    #train_video_view_4 = train_list[4][0]
     
     validator_0 = Validator(
         model=trainer.model,
@@ -215,6 +217,7 @@ def main(cfgs):
             batch_1 = to_device(batch_1, device)
             batch_2 = to_device(batch_2, device)
             batch_3 = to_device(batch_3, device)
+            #batch_4 = to_device(batch_4, device)
 
             
             if debug:
@@ -235,6 +238,7 @@ def main(cfgs):
           validator_1.save_train_videos(epoch)
           validator_2.save_train_videos(epoch)
           validator_3.save_train_videos(epoch)
+          #validator_4.save_train_videos(epoch)
 
 
 
@@ -278,6 +282,7 @@ def initialize_and_checkpoint_model(
     if vis and cfg.port is not None:
         server = get_server(port=cfg.port)
         vis_init_params(server, fg_params, motion_bases)
+
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
 
     guru.info(f"Saving initialization to {ckpt_path}")
@@ -298,6 +303,7 @@ def init_model_from_unified_tracks(
     train_dataset2 = train_datasets[1]
     train_dataset3 = train_datasets[2]
     train_dataset4 = train_datasets[3]
+    #train_dataset5 = train_datasets[4]
 
 
     # Assuming each dataset returns multiple components as PyTorch tensors
@@ -305,23 +311,25 @@ def init_model_from_unified_tracks(
     tracks_3d_2, visibles_2, invisibles_2, confidences_2, colors_2, feats_2 = train_dataset2.get_tracks_3d(num_fg)
     tracks_3d_3, visibles_3, invisibles_3, confidences_3, colors_3, feats_3 = train_dataset3.get_tracks_3d(num_fg)
     tracks_3d_4, visibles_4, invisibles_4, confidences_4, colors_4, feats_4 = train_dataset4.get_tracks_3d(num_fg)
-
+    #tracks_3d_5, visibles_5, invisibles_5, confidences_5, colors_5, feats_5 = train_dataset5.get_tracks_3d(num_fg)
     # Concatenate each component separately using torch.cat
-    combined_tracks_3d = torch.cat((tracks_3d_1, tracks_3d_2, tracks_3d_3, tracks_3d_4), dim=0)
-    combined_visibles = torch.cat((visibles_1, visibles_2, visibles_3, visibles_4), dim=0)
-    combined_invisibles = torch.cat((invisibles_1, invisibles_2, invisibles_3, invisibles_4), dim=0)
-    combined_confidences = torch.cat((confidences_1, confidences_2, confidences_3, confidences_4), dim=0)
-    combined_colors = torch.cat((colors_1, colors_2, colors_3, colors_4), dim=0)
-    combined_feats = torch.cat((feats_1, feats_2, feats_3, feats_4), dim=0)
+    combined_tracks_3d = torch.cat((tracks_3d_1, tracks_3d_2, tracks_3d_3, tracks_3d_4, ), dim=0)
+    combined_visibles = torch.cat((visibles_1, visibles_2, visibles_3, visibles_4, ), dim=0)
+    combined_invisibles = torch.cat((invisibles_1, invisibles_2, invisibles_3, invisibles_4, ), dim=0)
+    combined_confidences = torch.cat((confidences_1, confidences_2, confidences_3, confidences_4, ), dim=0)
+    combined_colors = torch.cat((colors_1, colors_2, colors_3, colors_4, ), dim=0)
+    combined_feats = torch.cat((feats_1, feats_2, feats_3, feats_4, ), dim=0)
 
     # You can now return or use the combined dataset
+    #print('before cat', colors_1.shape, feats_1.shape, combined_colors.shape, combined_feats.shape, )
     combined_data = (combined_tracks_3d, combined_visibles, combined_invisibles, combined_confidences, combined_colors, combined_feats)
 
-    print('track3d shape', tracks_3d_1.shape, tracks_3d_2.shape, tracks_3d_3.shape, tracks_3d_4.shape)
     tracks_3d = TrackObservations(*combined_data)
+
+    #print('track3d shape', tracks_3d.xyz.shape, tracks_3d.feats.shape)
     rot_type = "6d"
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
         tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
@@ -339,12 +347,13 @@ def init_model_from_unified_tracks(
         bg_points_2, bg_normals_2, bg_colors_2, bg_feats_2 = train_dataset2.get_bkgd_points(num_fg)
         bg_points_3, bg_normals_3, bg_colors_3, bg_feats_3 = train_dataset3.get_bkgd_points(num_fg)
         bg_points_4, bg_normals_4, bg_colors_4, bg_feats_4 = train_dataset4.get_bkgd_points(num_fg)
+        #bg_points_5, bg_normals_5, bg_colors_5, bg_feats_5 = train_dataset5.get_bkgd_points(num_fg)
 
         # Concatenate each component separately using torch.cat
-        combined_bg_points = torch.cat((bg_points_1, bg_points_2, bg_points_3, bg_points_4), dim=0)
-        combined_bg_normals = torch.cat((bg_normals_1, bg_normals_2, bg_normals_3, bg_normals_4), dim=0)
-        combined_bg_colors = torch.cat((bg_colors_1, bg_colors_2, bg_colors_3, bg_colors_4), dim=0)
-        combined_bg_feats = torch.cat((bg_feats_1, bg_feats_2, bg_feats_3, bg_feats_4), dim=0)
+        combined_bg_points = torch.cat((bg_points_1, bg_points_2, bg_points_3, bg_points_4, ), dim=0)
+        combined_bg_normals = torch.cat((bg_normals_1, bg_normals_2, bg_normals_3, bg_normals_4, ), dim=0)
+        combined_bg_colors = torch.cat((bg_colors_1, bg_colors_2, bg_colors_3, bg_colors_4, ), dim=0)
+        combined_bg_feats = torch.cat((bg_feats_1, bg_feats_2, bg_feats_3, bg_feats_4, ), dim=0)
 
         # You can now return or use the combined background dataset
         combined_bg_data = (combined_bg_points, combined_bg_normals, combined_bg_colors, combined_bg_feats)
@@ -419,12 +428,13 @@ if __name__ == "__main__":
 
     wandb.init()  
 
-    work_dir = './results_bike/output_mb_14_large_wo_depth'
+    work_dir = './results_dance/output_noC_10O_dancing_w_depth_w_track'
     config_1 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_1",
+            seq_name="undist_cam01",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -433,8 +443,9 @@ if __name__ == "__main__":
     config_2 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_2",
+            seq_name="undist_cam02",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -443,8 +454,9 @@ if __name__ == "__main__":
     config_3 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_3",
+            seq_name="undist_cam03",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),
@@ -453,8 +465,20 @@ if __name__ == "__main__":
     config_4 = TrainConfig(
         work_dir=work_dir,
         data=CustomDataConfig(
-            seq_name="toy_512_4",
+            seq_name="undist_cam04",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
+        ),
+        lr=tyro.cli(SceneLRConfig),
+        loss=tyro.cli(LossesConfig),
+        optim=tyro.cli(OptimizerConfig),
+    )
+    config_5 = TrainConfig(
+        work_dir=work_dir,
+        data=CustomDataConfig(
+            seq_name="undist_cam05",
+            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+            video_name='_dance'
         ),
         lr=tyro.cli(SceneLRConfig),
         loss=tyro.cli(LossesConfig),

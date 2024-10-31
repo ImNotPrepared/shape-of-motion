@@ -69,7 +69,7 @@ def init_fg_from_tracks_3d(
     # Initialize gaussian orientations as random.
     quats = torch.rand(num_fg, 4)
     # Initialize gaussian opacities.
-    opacities = torch.logit(torch.full((num_fg,), 0.7))
+    opacities = torch.logit(torch.full((num_fg,), 0.97))
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
 
     path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
@@ -171,21 +171,15 @@ def init_motion_params_with_procrustes(
     port: int | None = None,
 ) -> tuple[MotionBases, torch.Tensor, TrackObservations]:
     device = tracks_3d.xyz.device
-    print( tracks_3d.xyz.shape)
+    print(tracks_3d.xyz.shape)
+    print(tracks_3d.feats.shape)
     num_frames = tracks_3d.xyz.shape[1]
 
-
-
-
-
-
-
-    # sample centers and get initial se3 motion bases by solving procrustes
     means_cano = tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
     print('aaaaaaaaaaaaaaaaFUCKOFFaaaaaaaaaaaa', )
     # remove outliers
     scene_center = means_cano.median(dim=0).values
-    print(f"{scene_center=}")
+    print(f"{scene_center=}") # 
     dists = torch.norm(means_cano - scene_center, dim=-1)
     dists_th = torch.quantile(dists, 0.95)
     valid_mask = dists < dists_th
@@ -199,8 +193,6 @@ def init_motion_params_with_procrustes(
     if vis and port is not None:
         server = get_server(port)
         try:
-
-
             pts = tracks_3d.xyz.cpu().numpy()
             clrs = tracks_3d.colors.cpu().numpy()
             while True:
@@ -603,33 +595,84 @@ def sample_initial_bases_centers(
     means_canonical = tracks_3d.xyz[:, cano_t].clone()
     xyz = cp.asarray(tracks_3d.xyz)
     print(f"{xyz.shape=}") # [N, T, 3]
-    visibles = cp.asarray(tracks_3d.visibles)
 
-    num_tracks = xyz.shape[0]
-    xyz_interp = batched_interp_masked(xyz, visibles)
-    velocities = xyz_interp[:, 1:] - xyz_interp[:, :-1]
-    # num_vis = 50
-    # server = get_server(port=8890)
-    # idcs = np.random.choice(num_tracks, num_vis)
-    # labels = np.linspace(0, 1, num_vis)
-    # vis_tracks_3d(server, tracks_3d.xyz[idcs].get(), labels, name="raw_tracks")
-    # vis_tracks_3d(server, xyz_interp[idcs].get(), labels, name="interp_tracks")
-    # import ipdb; ipdb.set_trace()
+    clustering_method = 'feat'
+
+    # num_bases
+    if clustering_method == 'feat':
+        from sklearn.cluster import SpectralClustering
+        feats = tracks_3d.feats  # Now feats is a NumPy array
+        print(f"{feats.shape=}")  # [N, C]
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(feats)
+
+        # Perform K-Means clustering
+        kmeans = KMeans(n_clusters=num_bases, random_state=42)
+        labels = kmeans.fit_predict(X_scaled)
+        '''# Compute the norm using NumPy
+        feats_norm = feats / np.linalg.norm(feats, axis=1, keepdims=True)
+
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        # Compute the cosine similarity matrix using scikit-learn
+        similarity_matrix = cosine_similarity(feats_norm)
+
+        # Proceed with clustering as before
+        n_clusters = num_bases
+        clustering = SpectralClustering(
+            n_clusters=n_clusters,
+            affinity='precomputed',
+            assign_labels='kmeans',
+            random_state=42
+        )
+
+        # Check for NaN values
+        if np.isnan(similarity_matrix).any():
+            print("The input contains NaN values.")
+        else:
+            print("The input does not contain any NaN values.")
+            print(similarity_matrix.max(), similarity_matrix.min())
+
+        # Clip the similarity values if necessary
+        similarity_matrix = np.clip(similarity_matrix, -1, 1)
+
+        # Proceed with clustering
+        labels = clustering.fit_predict(similarity_matrix)'''
 
 
 
-    vel_dirs = (
-        velocities / (cp.linalg.norm(velocities, axis=-1, keepdims=True) + 1e-5)
-    ).reshape((num_tracks, -1)) ## [N, (T-1) * 3] 
-    print(vel_dirs.shape)
-    # [num_bases, num_gaussians]
-    if mode == "kmeans":
-        model = KMeans(n_clusters=num_bases)
     else:
-        model = HDBSCAN(min_cluster_size=20, max_cluster_size=num_tracks // 4)
-    model.fit(vel_dirs)
-    labels = model.labels_
-    num_bases_org = 10
+      visibles = cp.asarray(tracks_3d.visibles)
+
+      num_tracks = xyz.shape[0]
+      xyz_interp = batched_interp_masked(xyz, visibles)
+
+      print(f"{dir(tracks_3d)=}")
+      # (99149,)                                                                                      
+      # (99149, 300)    
+
+      # num_vis = 50
+      # server = get_server(port=8890)
+      # idcs = np.random.choice(num_tracks, num_vis)
+      # labels = np.linspace(0, 1, num_vis)
+      # vis_tracks_3d(server, tracks_3d.xyz[idcs].get(), labels, name="raw_tracks")
+      # vis_tracks_3d(server, xyz_interp[idcs].get(), labels, name="interp_tracks")
+      # import ipdb; ipdb.set_trace()
+      velocities = xyz_interp[:, 1:] - xyz_interp[:, :-1]
+      vel_dirs = (
+          velocities / (cp.linalg.norm(velocities, axis=-1, keepdims=True) + 1e-5)
+      ).reshape((num_tracks, -1)) ## [N, (T-1) * 3] 
+      print(vel_dirs.shape) #(99149, 300)
+      #print(feat_interp.shape)  #(99149, 101, 3)  
+      # [num_bases, num_gaussians]
+      if mode == "kmeans":
+          model = KMeans(n_clusters=num_bases)
+      else:
+          model = HDBSCAN(min_cluster_size=20, max_cluster_size=num_tracks // 4)
+      model.fit(vel_dirs)
+      labels = model.labels_
+
     num_bases = labels.max().item() + 1
     sampled_centers = torch.stack(
         [
@@ -637,7 +680,7 @@ def sample_initial_bases_centers(
             for i in range(num_bases)
         ]
     )[None]
-
+    #     num_bases_org = 10
     #if num_bases < num_bases_org:
     #    num_to_duplicate = num_bases_org - num_bases
     #    indices_to_duplicate = torch.arange(num_to_duplicate) % num_bases

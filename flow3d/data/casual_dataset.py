@@ -350,23 +350,13 @@ class CasualDataset(BaseDataset):
         path = path.replace('jpg', 'npy')
         ### examples:
         # /data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/resized_512_Aligned_fg_only/undist_cam01 
-        #
-        # 
+
         #try:
         #  dcpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned/')
         #  dinov2_feature = torch.tensor(np.load(dcpath)).to(torch.float32)
         #except:
         ddpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
         dinov2_feature = torch.tensor(np.load(ddpath)).to(torch.float32)          
-        # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//toy_512_1/00183.jpg
-        # 
-        # /data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_registered/undist_cam02/00000.npy
-        #feat
-        #feature_root_path='/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512/' #undist_cam00_670/000000.npy'
-        #feature_path = feature_root_path+fn 
-        #print(path)
-        #dinov2_feature = torch.tensor(np.load(path)).to(torch.float32)#.permute(2, 0, 1)
-        #print(dinov2_feature.dtype, 'DDDDDtpye')
         return dinov2_feature
 
     def load_mask(self, index) -> torch.Tensor:
@@ -410,7 +400,24 @@ class CasualDataset(BaseDataset):
 
     def load_depth(self, index) -> torch.Tensor:
         #  load_da2_depth load_duster_depth load_org_depth
-        return self.load_duster_depth(index)
+        return self.load_modest_depth(index)
+
+    def load_modest_depth(self, index) -> torch.Tensor:
+        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
+        #print(self.depth_dir, path, int(self.frame_names[index]))
+        to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
+        new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
+        # duster_depth_clean_dance_512_4_mons_cp
+        path = path.replace(to_replace, new_path)
+        path = path.replace('disp', 'frame')
+        depth_map = np.load(path)
+        depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float()
+        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+
+        # If you want to remove the added dimensions
+        depth = input_tensor.squeeze(0).squeeze(0) 
+        return depth
 
     def load_duster_depth(self, index) -> torch.Tensor:
 # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
@@ -535,8 +542,8 @@ class CasualDataset(BaseDataset):
         tracks_3d, colors, feats, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
         )
-        #print('wtttf', colors.shape)
-        #print('wtttf', feats.shape)
+        print('wtttf', colors.shape)
+        print('wtttf', feats.shape)
 
         return tracks_3d, visibles, invisibles, confidences, colors, feats
 
