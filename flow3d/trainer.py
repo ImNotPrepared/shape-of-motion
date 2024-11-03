@@ -501,8 +501,8 @@ class Trainer:
         )
 
         pred_depth = cast(torch.Tensor, rendered_all["depth"])
-        pred_disp = 1.0 / (pred_depth + 1e-5)
-        tgt_disp = 1.0 / (depths[..., None] + 1e-5)
+        pred_disp = pred_depth # 1.0 / (pred_depth + 1e-5)
+        tgt_disp = depths[..., None] # 1.0 / (depths[..., None] + 1e-5)
         depth_loss = masked_l1_loss(
             pred_disp,
             tgt_disp,

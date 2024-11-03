@@ -320,7 +320,7 @@ if __name__ == "__main__":
     import wandb 
     wandb.init()  
     config_1 = TrainConfig(
-        work_dir="./outdir_single_da2_aligned_Sep30_new_1",
+        work_dir="./outdir_single_old",
         data=CustomDataConfig(
             seq_name="toy_512_1",
             root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",

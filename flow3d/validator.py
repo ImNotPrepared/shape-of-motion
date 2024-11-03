@@ -387,9 +387,13 @@ class Validator:
         motion_coef_colors = (motion_coef_colors - motion_coef_colors.min(0)[0]) / (
             motion_coef_colors.max(0)[0] - motion_coef_colors.min(0)[0]
         )
-        motion_coef_colors = F.pad(
-            motion_coef_colors, (0, 0, 0, self.model.bg.num_gaussians), value=0.5
-        )
+
+        if self.model.bg is None: 
+          motion_coef_colors = motion_coef_colors
+        else:
+          motion_coef_colors = F.pad(
+              motion_coef_colors, (0, 0, 0, self.model.bg.num_gaussians), value=0.5
+          )
         video = []
         for batch in tqdm(
             self.train_loader, desc="Rendering motion coefficient video", leave=False
