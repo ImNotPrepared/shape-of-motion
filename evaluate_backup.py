@@ -66,7 +66,7 @@ class RenderConfig:
     work_dir: str 
 
 
-def interpolate_extrinsics(extrinsics1, extrinsics2, alpha):
+def interpolate_extrinsics(extrinsics1, extrinsics2, alpha=0.5):
     """
     Interpolate between two extrinsics matrices (4x4) by factor alpha.
     Returns the interpolated extrinsics matrix.

@@ -23,7 +23,8 @@ from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import get_server
 from flow3d.vis.viewer import DynamicViewer
 
-
+import plotly.express as px
+import pandas as pd
 class Trainer:
     def __init__(
         self,
@@ -501,8 +502,8 @@ class Trainer:
         )
 
         pred_depth = cast(torch.Tensor, rendered_all["depth"])
-        pred_disp = pred_depth # 1.0 / (pred_depth + 1e-5)
-        tgt_disp = depths[..., None] # 1.0 / (depths[..., None] + 1e-5)
+        pred_disp = 1.0 / (pred_depth + 1e-5)
+        tgt_disp = 1.0 / (depths[..., None] + 1e-5)
         depth_loss = masked_l1_loss(
             pred_disp,
             tgt_disp,
@@ -611,6 +612,17 @@ class Trainer:
               "train/num_fg_gaussians": self.model.num_fg_gaussians,
               "train/num_bg_gaussians": self.model.num_bg_gaussians,
           }          
+
+
+        loss_dict = {key: value for key, value in stats.items() if '_loss' in key}
+
+        loss_df = pd.DataFrame(list(loss_dict.items()), columns=['Loss Term', 'Value'])
+
+        # Create a pie chart using Plotly
+        fig = px.pie(loss_df, names='Loss Term', values='Value', title='Loss Distribution')
+
+        # Log the pie chart to wandb
+        wandb.log({'Loss Pie Chart': fig})
 
         # Compute metrics.
         with torch.no_grad():

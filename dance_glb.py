@@ -3,7 +3,7 @@ import os.path as osp
 import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Annotated
+from typing import List, Annotated
 
 import numpy as np
 import torch
@@ -16,10 +16,8 @@ from tqdm import tqdm
 from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.data import (
     BaseDataset,
-    DavisDataConfig,
     CustomDataConfig,
     get_train_val_datasets,
-    iPhoneDataConfig,
 )
 from flow3d.data.utils import to_device
 from flow3d.init_utils import (
@@ -28,9 +26,7 @@ from flow3d.init_utils import (
     init_motion_params_with_procrustes,
     run_initial_optim,
     vis_init_params,
-    vis_tracks_2d_video, 
 )
-
 from flow3d.params import GaussianParams, MotionBases
 from flow3d.scene_model import SceneModel
 from flow3d.tensor_dataclass import StaticObservations, TrackObservations
@@ -39,7 +35,6 @@ from flow3d.validator import Validator
 from flow3d.vis.utils import get_server
 
 torch.set_float32_matmul_precision("high")
-
 
 def set_seed(seed):
     # Set the seed for generating random numbers
@@ -50,22 +45,17 @@ def set_seed(seed):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-
-        set_seed(42)
+set_seed(42)
 
 @dataclass
 class TrainConfig:
     work_dir: str
-    data: (
-        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
-        | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
-        | Annotated[CustomDataConfig, tyro.conf.subcommand(name="custom")]
-    )
+    data: CustomDataConfig
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 150_000
-    num_bg: int = 100_000 ### changed to 0 # 100_000
+    num_fg: int = 70_000
+    num_bg: int = 10_000
     num_motion_bases: int = 11
     num_epochs: int = 500
     port: int | None = None
@@ -75,176 +65,96 @@ class TrainConfig:
     validate_every: int = 100
     save_videos_every: int = 100
 
-
-def main(cfgs):
+def main(cfgs: List[TrainConfig]):
     train_list = []
     for cfg in cfgs:
-      train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
-          get_train_val_datasets(cfg.data, load_val=True)
-      )
-      guru.info(f"Training dataset has {train_dataset.num_frames} frames")
-      device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
+            get_train_val_datasets(cfg.data, load_val=True)
+        )
+        guru.info(f"Training dataset has {train_dataset.num_frames} frames")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-      # save config
-      os.makedirs(cfg.work_dir, exist_ok=True)
-      with open(f"{cfg.work_dir}/cfg.yaml", "w") as f:
-          yaml.dump(asdict(cfg), f, default_flow_style=False)
+        # save config
+        os.makedirs(cfg.work_dir, exist_ok=True)
+        with open(f"{cfg.work_dir}/cfg.yaml", "w") as f:
+            yaml.dump(asdict(cfg), f, default_flow_style=False)
 
-      # if checkpoint exists
-      ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-      train_loader = DataLoader(
-          train_dataset,
-          batch_size=cfg.batch_size,
-          num_workers=cfg.num_dl_workers,
-          persistent_workers=True,
-          collate_fn=BaseDataset.train_collate_fn,
-      )
+        # if checkpoint exists
+        ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_dl_workers,
+            persistent_workers=True,
+            collate_fn=BaseDataset.train_collate_fn,
+        )
 
-      train_list.append((train_video_view, train_loader, train_dataset))
+        train_list.append((train_video_view, train_loader, train_dataset))
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_loaders = [train[1] for train in train_list]
+    train_video_views = [train[0] for train in train_list]
 
-
-    train_dataset_0 = train_list[0][-1]#.train_step(batch_0)
-    train_dataset_1 = train_list[1][-1]#.train_step(batch_1)
-    train_dataset_2 = train_list[2][-1]#.train_step(batch_2)
-    train_dataset_3 = train_list[3][-1]#.train_step(batch_3)
-    #train_dataset_4 = train_list[4][-1]#.train_step(batch_3)
-    debug=False
-
-
-    if debug:
-      initialize_and_checkpoint_model(
-          cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3 ],
-          device,
-          ckpt_path,
-          vis=cfg.vis_debug,
-          port=cfg.port,
-          debug=debug
-      )
-
-    else:
-
-      initialize_and_checkpoint_model(
-          cfg,
-          [train_dataset_0, train_dataset_1, train_dataset_2, train_dataset_3],
-          device,
-          ckpt_path,
-          vis=cfg.vis_debug,
-          port=cfg.port,
-          debug=debug
-      )
+    # Initialize model
+    initialize_and_checkpoint_model(
+        cfgs[0],
+        [train[-1] for train in train_list],
+        device,
+        ckpt_path,
+        vis=cfgs[0].vis_debug,
+        port=cfgs[0].port,
+    )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
         device,
-        cfg.lr,
-        cfg.loss,
-        cfg.optim,
-        work_dir=cfg.work_dir,
-        port=cfg.port,
+        cfgs[0].lr,
+        cfgs[0].loss,
+        cfgs[0].optim,
+        work_dir=cfgs[0].work_dir,
+        port=cfgs[0].port,
     )
 
-
-    train_loader_0 = train_list[0][1]
-    train_loader_1 = train_list[1][1]
-    train_loader_2 = train_list[2][1]
-    train_loader_3 = train_list[3][1]
-    #train_loader_4 = train_list[4][1]
-
-    train_video_view_0 = train_list[0][0]
-    train_video_view_1 = train_list[1][0]
-    train_video_view_2 = train_list[2][0]
-    train_video_view_3 = train_list[3][0]
-    #train_video_view_4 = train_list[4][0]
-    
-    validator_0 = Validator(
-        model=trainer.model,
-        device=device,
-        train_loader=(
-            DataLoader(train_video_view_0, batch_size=1)
-        ),
-        save_dir=os.path.join(cfg.work_dir, 'cam_1'),
-    )
-
-    validator_1 = Validator(
-        model=trainer.model,
-        device=device,
-        train_loader=(
-            DataLoader(train_video_view_1, batch_size=1)
-        ),
-        save_dir=os.path.join(cfg.work_dir, 'cam_2'),
-    )
-
-    validator_2 = Validator(
-        model=trainer.model,
-        device=device,
-        train_loader=(
-            DataLoader(train_video_view_2, batch_size=1)
-        ),
-        save_dir=os.path.join(cfg.work_dir, 'cam_3'),
-    )
-    validator_3 = Validator(
-        model=trainer.model,
-        device=device,
-        train_loader=(
-            DataLoader(train_video_view_3, batch_size=1)
-        ),
-        save_dir=os.path.join(cfg.work_dir, 'cam_4'),
-    )
-
+    validators = [
+        Validator(
+            model=trainer.model,
+            device=device,
+            train_loader=DataLoader(view, batch_size=1),
+            save_dir=os.path.join(cfgs[0].work_dir, f'cam_{i+1}'),
+        )
+        for i, view in enumerate(train_video_views)
+    ]
 
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
         pbar := tqdm(
-            range(start_epoch, cfg.num_epochs),
+            range(start_epoch, cfgs[0].num_epochs),
             initial=start_epoch,
-            total=cfg.num_epochs,
+            total=cfgs[0].num_epochs,
         )
     ):
         loss = 0
 
-
         trainer.set_epoch(epoch)
 
-        train_loaders = [train_loader_0, train_loader_1, train_loader_2, train_loader_3]
-
         # Zip the loaders to load one batch from each loader at each step
-        for batch_0, batch_1, batch_2, batch_3 in zip(*train_loaders):
-
-            #### load multi-view data
-            batch_0 = to_device(batch_0, device)
-            batch_1 = to_device(batch_1, device)
-            batch_2 = to_device(batch_2, device)
-            batch_3 = to_device(batch_3, device)
-            #batch_4 = to_device(batch_4, device)
-
-            
-            if debug:
-              loss = trainer.train_step([batch_0, batch_0, batch_0, batch_0])
-
-            else:
-              loss = trainer.train_step([batch_0, batch_1, batch_2, batch_3])#(loss_0 + loss_1 + loss_2 + loss_3) / 4
+        for batches in zip(*train_loaders):
+            batches = [to_device(batch, device) for batch in batches]
+            loss = trainer.train_step(batches)
             loss.backward()
             trainer.op_af_bk()
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
-
-        if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
-            epoch == cfg.num_epochs - 1
+        if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
+            epoch == cfgs[0].num_epochs - 1
         ):
-          validator_0.save_train_videos(epoch)
-          validator_1.save_train_videos(epoch)
-          validator_2.save_train_videos(epoch)
-          validator_3.save_train_videos(epoch)
-          #validator_4.save_train_videos(epoch)
-
-
+            for validator in validators:
+                validator.save_train_videos(epoch)
 
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
-    train_datasets: list[BaseDataset], #train_dataset: BaseDataset, 
+    train_datasets: list[BaseDataset],
     device: torch.device,
     ckpt_path: str,
     vis: bool = False,
@@ -254,13 +164,9 @@ def initialize_and_checkpoint_model(
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_path}")
         return
-    
 
     Ks_fuse = []
     w2cs_fuse = []
-    fg_params_fuse = []
-    motion_bases_fuse = []
-    bg_params_fuse = []
 
     fg_params, motion_bases, bg_params, tracks_3d = init_model_from_unified_tracks(
         train_datasets,
@@ -290,7 +196,6 @@ def initialize_and_checkpoint_model(
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
 
-
 def init_model_from_unified_tracks(
     train_datasets,
     num_fg: int,
@@ -308,8 +213,7 @@ def init_model_from_unified_tracks(
     feats_list = []
 
     # Loop over the datasets and collect data
-    
-    for idx, train_dataset in enumerate(train_datasets[:1]):
+    for train_dataset in train_datasets:
         tracks_3d, visibles, invisibles, confidences, colors, feats = train_dataset.get_tracks_3d(num_fg)
         tracks_3d_list.append(tracks_3d)
         visibles_list.append(visibles)
@@ -383,78 +287,25 @@ def init_model_from_unified_tracks(
     tracks_3d = tracks_3d.to(device)
     return fg_params, motion_bases, bg_params, tracks_3d
 
-
-
-def backup_code(work_dir):
-    root_dir = osp.abspath(osp.join(osp.dirname(__file__)))
-    tracked_dirs = [osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts"]]
-    dst_dir = osp.join(work_dir, "code", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
-    for tracked_dir in tracked_dirs:
-        if osp.exists(tracked_dir):
-            shutil.copytree(tracked_dir, osp.join(dst_dir, osp.basename(tracked_dir)))
-
-
 if __name__ == "__main__":
-    import wandb 
-    import argparse
-    import tyro
+    import wandb
 
-    wandb.init()  
 
-    work_dir = './results_dance/output_noC_largeD_nodisp_rd_dancing_w_track'
-    config_1 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam01",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    config_2 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam02",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    config_3 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam03",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    config_4 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam04",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    config_5 = TrainConfig(
-        work_dir=work_dir,
-        data=CustomDataConfig(
-            seq_name="undist_cam05",
-            root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-            video_name='_dance'
-        ),
-        lr=tyro.cli(SceneLRConfig),
-        loss=tyro.cli(LossesConfig),
-        optim=tyro.cli(OptimizerConfig),
-    )
-    main([config_1, config_2, config_3, config_4])
+    work_dir = './results_dance/ttttestt'
+    wandb.init(name=work_dir.split('/')[-1])
+
+    configs = [
+        TrainConfig(
+            work_dir=work_dir,
+            data=CustomDataConfig(
+                seq_name=f"undist_cam0{i+1}",
+                root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+                video_name='_dance'
+            ),
+            lr=tyro.cli(SceneLRConfig),
+            loss=tyro.cli(LossesConfig),
+            optim=tyro.cli(OptimizerConfig),
+        )
+        for i in range(4)
+    ]
+    main(configs)
