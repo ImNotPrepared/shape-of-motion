@@ -39,8 +39,8 @@ class LossesConfig:
     w_rgb: float = 7.0
     w_feat: float = 7.0 #0.01
     w_depth_reg: float = 7.0
-    w_depth_const: float = 0.1
-    w_depth_grad: float = 0.1
+    w_depth_const: float = 0.0
+    w_depth_grad: float = 0.0
     w_track: float = 2.0
     w_mask: float = 4.0
     w_smooth_bases: float = 0.1
@@ -69,7 +69,7 @@ class OptimizerConfig:
     max_steps: int = 5000
     ## Adaptive gaussian control
     warmup_steps: int = 200
-    control_every: int = 100
+    control_every: int = 200
     reset_opacity_every_n_controls: int = 30
     stop_control_by_screen_steps: int = 4000
     stop_control_steps: int = 4000

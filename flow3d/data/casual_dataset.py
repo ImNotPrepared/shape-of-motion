@@ -379,9 +379,15 @@ class CasualDataset(BaseDataset):
 
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
         bg_mask = ~fg_mask
-        fg_mask_erode = fg_mask
-        bg_mask_erode = bg_mask
+        fg_mask_erode = fg_mask #cv2.erode(
+        #    fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        #)
+        bg_mask_erode = bg_mask#cv2.erode(
+        #    bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        #)
         out_mask = np.zeros_like(fg_mask, dtype=np.float32)
+        out_mask[bg_mask_erode > 0] = -1
+        out_mask[fg_mask_erode > 0] = 1
         return torch.from_numpy(out_mask).float()
 
     def load_org_depth(self, index) -> torch.Tensor:
