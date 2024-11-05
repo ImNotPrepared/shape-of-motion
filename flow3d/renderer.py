@@ -141,7 +141,7 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        self.seq_name='woc'
+        self.seq_name='last2'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
@@ -176,6 +176,14 @@ class Renderer:
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
           pc = np.load(pc_dir)["data"] 
+
+        elif self.seq_name == 'last2':
+          #/data3/zihanwa3/Capstone-DSR/monst3r/allcat/10/pc.npz
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_monst3r/{t}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
+          pc = np.load(pc_dir)["data"] 
+
 
         pc = torch.tensor(pc).cuda()[:, :6].float()
         #pc[:, 3:] = pc[:, 3:] / 255

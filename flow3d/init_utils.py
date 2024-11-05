@@ -69,7 +69,7 @@ def init_fg_from_tracks_3d(
     # Initialize gaussian orientations as random.
     quats = torch.rand(num_fg, 4)
     # Initialize gaussian opacities.
-    opacities = torch.logit(torch.full((num_fg,), 0.7))
+    opacities = torch.logit(torch.full((num_fg,), 0.97))
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
 
     path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
