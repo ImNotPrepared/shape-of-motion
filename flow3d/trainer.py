@@ -407,8 +407,8 @@ class Trainer:
         rendered_imgs = cast(torch.Tensor, rendered_all["img"])
         if self.model.has_bg:
             rendered_imgs = (
-                rendered_imgs * valid_masks[..., None]
-                + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+                rendered_imgs * valid_masks[..., None]                + 
+            (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
             )
 
         if 'feat' in rendered_all.keys():
@@ -418,7 +418,7 @@ class Trainer:
                   rendered_feats * valid_masks[..., None]
                   + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
               )
-              feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
+              feat_loss = 0.8 * F.mse_loss(rendered_feats, feats) 
               loss += feat_loss * self.losses_cfg.w_feat
 
 

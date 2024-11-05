@@ -291,7 +291,7 @@ if __name__ == "__main__":
     import wandb
 
 
-    work_dir = './results_dance/ttttestt'
+    work_dir = './results_dance/DEBUG_org_size'
     wandb.init(name=work_dir.split('/')[-1])
 
     configs = [

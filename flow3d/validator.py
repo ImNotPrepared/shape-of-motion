@@ -338,7 +338,8 @@ class Validator:
             depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
             if rendered["mask"] is not None:
                 #masks.append(rendered["mask"][0].cpu().squeeze(-1))
-                masks.append(torch.cat([mask, rendered["mask"][0]], dim=1).cpu().squeeze(-1))
+                #print(mask.shape, rendered["mask"][0].shape, 'MASKSHAPE')
+                masks.append(torch.cat([mask, rendered["mask"][0].squeeze(-1)], dim=1).cpu())
 
         # rgb video
         video = torch.stack(video, dim=0)

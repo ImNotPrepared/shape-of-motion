@@ -141,7 +141,7 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        self.seq_name='wtf'
+        self.seq_name='woc'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
@@ -167,6 +167,12 @@ class Renderer:
           pc = np.load(pc_dir)["data"]
         elif self.seq_name == 'plz':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/tmp/undist_cam01/{t}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
+          pc = np.load(pc_dir)["data"] 
+        elif self.seq_name == 'lllong':
+          #/data3/zihanwa3/Capstone-DSR/monst3r/allcat/10/pc.npz
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/allcat/{t}/pc.npz'
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
           pc = np.load(pc_dir)["data"] 
