@@ -50,12 +50,13 @@ set_seed(42)
 @dataclass
 class TrainConfig:
     work_dir: str
+    train_indices: list
     data: CustomDataConfig
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 150_000
-    num_bg: int = 100_000
+    num_fg: int = 70_000
+    num_bg: int = 10_000
     num_motion_bases: int = 11
     num_epochs: int = 500
     port: int | None = None
@@ -89,17 +90,23 @@ def main(cfgs: List[TrainConfig]):
             persistent_workers=True,
             collate_fn=BaseDataset.train_collate_fn,
         )
-
+        train_indices = cfg.train_indices
         train_list.append((train_video_view, train_loader, train_dataset))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_loaders = [train[1] for train in train_list]
+
+    train_loader = [train[1] for train in train_list]
+    train_loaders = [train_loader[i] for i in train_indices]
     train_video_views = [train[0] for train in train_list]
+
+    train_dataset = [train[-1] for train in train_list]
+
+    train_datasets = [train_dataset[i] for i in train_indices]
 
     # Initialize model
     initialize_and_checkpoint_model(
         cfgs[0],
-        [train[-1] for train in train_list],
+        train_datasets,
         device,
         ckpt_path,
         vis=cfgs[0].vis_debug,
@@ -291,10 +298,30 @@ def init_model_from_unified_tracks(
 if __name__ == "__main__":
     import wandb
 
-
-    work_dir = './results_dance/NEW_base'
+    import argparse
+    work_dir = './results_dance/NEW_sml_depth_LR_all_3_terms/'
     wandb.init(name=work_dir.split('/')[-1])
+    parser = argparse.ArgumentParser(description="Wandb Training Script")
+    parser.add_argument(
+        "--train_indices", type=int, nargs='+', default=[0, 1, 2, 3], help="List of training indices"
+    )
+    parser.add_argument(
+        "--work_dir_name", type=str, default="complete"
+    )
 
+    args, remaining_args = parser.parse_known_args()
+
+    train_indices = args.train_indices
+    def find_missing_number(nums):
+        full_set = {0, 1, 2, 3}
+        missing_number = full_set - set(nums)
+        return missing_number.pop() if missing_number else None
+
+    if len(train_indices) != 4:
+      work_dir += f'roll_out_cam_{find_missing_number(train_indices)}'
+    
+    print(work_dir)
+    import tyro
     configs = [
         TrainConfig(
             work_dir=work_dir,
@@ -303,9 +330,11 @@ if __name__ == "__main__":
                 root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                 video_name='_dance'
             ),
-            lr=tyro.cli(SceneLRConfig),
-            loss=tyro.cli(LossesConfig),
-            optim=tyro.cli(OptimizerConfig),
+            # Pass the unknown arguments to tyro.cli
+            lr=tyro.cli(SceneLRConfig, args=remaining_args),
+            loss=tyro.cli(LossesConfig, args=remaining_args),
+            optim=tyro.cli(OptimizerConfig, args=remaining_args),
+            train_indices=train_indices
         )
         for i in range(4)
     ]
