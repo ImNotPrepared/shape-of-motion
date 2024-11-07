@@ -330,9 +330,6 @@ class SceneModel(nn.Module):
                 x = x.reshape(C, H, W, B, 3)
             out_dict[name] = x
 
-
-
-        #if isinstance(bg_color, float):
         bg_feat = torch.ones((1, 32), device=device)
         render_feats, _, _ = rasterization(
             means=means,

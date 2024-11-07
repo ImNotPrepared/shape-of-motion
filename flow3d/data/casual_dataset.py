@@ -126,6 +126,7 @@ class CasualDataset(BaseDataset):
         # self.camera_path
         self.video_name = video_name# '_dance'
         self.hard_indx_dict = {
+          '_bike': [49, 350, 3], 
           '_dance': [1477, 1778, 3],
           '': [183, 295, 1],
         }
@@ -448,8 +449,6 @@ class CasualDataset(BaseDataset):
         depth = resized_tensor.squeeze(0).squeeze(0) 
         return depth
 
-
-
     def load_da2_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         near, far = 1e-7, 7e1
@@ -658,8 +657,8 @@ class CasualDataset(BaseDataset):
 
         return bg_points, bg_normals, bg_colors, bg_feats
 
-    def __getitem__(self, index: int):
-        index = np.random.randint(0, self.num_frames)
+    def __getitem__(self, index: int, target_inds=None):
+        #index = np.random.randint(0, self.num_frames)
         data = {
             # ().
             "frame_names": self.frame_names[index],
@@ -682,11 +681,16 @@ class CasualDataset(BaseDataset):
 
         # (P, 2)
         query_tracks = self.load_target_tracks(index, [index])[:, 0, :2]
-        target_inds = torch.from_numpy(
-            np.random.choice(
-                self.num_frames, (self.num_targets_per_frame,), replace=False
-            )
-        )
+        if target_inds is None:
+          target_inds = torch.from_numpy(
+              np.random.choice(
+                  self.num_frames, (self.num_targets_per_frame,), replace=False
+              )
+          )
+        else:
+          target_inds = torch.from_numpy(
+              target_inds
+          )
         # (N, P, 4)
         target_tracks = self.load_target_tracks(index, target_inds.tolist(), dim=0)
 

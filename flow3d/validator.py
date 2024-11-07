@@ -73,7 +73,7 @@ class Validator:
     @torch.no_grad()
     def validate(self):
         self.reset_metrics()
-        metric_imgs = self.validate_imgs() or {}
+        metric_imgs = self.validate_imgs() #or {}
         return {**metric_imgs}
 
     @torch.no_grad()
@@ -179,7 +179,7 @@ class Validator:
                 "covisible_masks",
                 torch.ones_like(fg_mask)[None],
             )
-            W, H = img_wh = img[0].shape[-2::-1]
+            # W, H = img_wh = img[0].shape[-2::-1]
 
             
             rendered = self.model.render(t, w2c, K, img_wh, return_depth=True)
@@ -227,17 +227,33 @@ class Validator:
         if self.val_img_loader is None:
             return
 
-        for batch in tqdm(self.val_img_loader, desc="render val images"):
-            batch = to_device(batch, self.device)
-            frame_name = batch["frame_names"][0]
+        # for batch in tqdm(self.val_img_loader, desc="render val images"):
+        for batch_idx, batch in enumerate(
+            tqdm(self.val_img_loader, desc="Rendering video", leave=False)
+        ):
+                        
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            # ().
             t = batch["ts"][0]
-            # (1, 4, 4).
-            w2c = batch["w2cs"]
-            # (1, 3, 3).
-            K = batch["Ks"]
-            # (1, H, W, 3).
+            # (4, 4).
+            w2c = batch["w2cs"][0]
+            # (3, 3).
+            K = batch["Ks"][0]
+            # (H, W, 3).
             img = batch["imgs"]
-            # (1, H, W).
+            # (H, W).
+            depth = batch["depths"]
+
+            mask = batch["masks"]
+
+            img_wh = img[0].shape[-2::-1]
+
+
+            frame_name = batch["frame_names"][0]
+
             valid_mask = batch.get(
                 "valid_masks", torch.ones_like(batch["imgs"][..., 0])
             )
@@ -247,12 +263,14 @@ class Validator:
             # (H, W).
             covisible_mask = batch.get(
                 "covisible_masks",
-                torch.ones_like(fg_mask)[None],
+                torch.ones_like(fg_mask),
             )
-            W, H = img_wh = img[0].shape[-2::-1]
-            rendered = self.model.render(t, w2c, K, img_wh, return_depth=True)
-
-            # Compute metrics.
+            rendered = self.model.render(
+                t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
+            )
+            #WITHOUT 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 1, 288, 512]) torch.Size([1, 288, 512])   
+            #WITH 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 288, 512]) torch.Size([288, 512]) 
+            # print(rendered["img"].shape, valid_mask.shape, covisible_mask.shape, fg_mask.shape)
             valid_mask *= covisible_mask
             fg_valid_mask = fg_mask * valid_mask
             bg_valid_mask = (1 - fg_mask) * valid_mask

@@ -75,3 +75,44 @@ class BaseDataset(Dataset):
             else:
                 collated[k] = [sample[k] for sample in batch]
         return collated
+    
+    @staticmethod
+    def train_collate_fn_sync(batch):
+        """
+        Custom collate function to handle batches from SynchornizedDataset.
+        
+        Args:
+            batch: List of samples, where each sample is a list of data dictionaries from each dataset.
+            
+        Returns:
+            batches: List of collated batches, one for each dataset.
+        """
+        # Transpose the batch to group data by dataset
+        # batch: List of samples -> batch_per_dataset: List of datasets
+        # Each element in batch_per_dataset is a list of data dictionaries from all samples for that dataset
+        batch_per_dataset = list(zip(*batch))
+        
+        batches = []
+        for dataset_samples in batch_per_dataset:
+            # dataset_samples: List of data dictionaries from samples for one dataset
+            collated = {}
+            for key in dataset_samples[0]:
+                if key in [
+                    "query_tracks_2d",
+                    "target_ts",
+                    "target_w2cs",
+                    "target_Ks",
+                    "target_tracks_2d",
+                    "target_visibles",
+                    "target_track_depths",
+                    "target_invisibles",
+                    "target_confidences",
+                    "frame_names",
+                ]:
+                    # For list data, collect them into a list
+                    collated[key] = [sample[key] for sample in dataset_samples]
+                else:
+                    # For tensor data, use default_collate
+                    collated[key] = default_collate([sample[key] for sample in dataset_samples])
+            batches.append(collated)
+        return batches

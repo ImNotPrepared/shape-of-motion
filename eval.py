@@ -18,7 +18,6 @@ from flow3d.data import (
     BaseDataset,
     CustomDataConfig,
     get_train_val_datasets,
-    SynchornizedDataset
 )
 from flow3d.data.utils import to_device
 from flow3d.init_utils import (
@@ -36,11 +35,6 @@ from flow3d.validator import Validator
 from flow3d.vis.utils import get_server
 
 torch.set_float32_matmul_precision("high")
-
-
-    
-
-
 
 def set_seed(seed):
     # Set the seed for generating random numbers
@@ -96,7 +90,6 @@ def main(cfgs: List[TrainConfig]):
             persistent_workers=True,
             collate_fn=BaseDataset.train_collate_fn,
         )
-        
         train_indices = cfg.train_indices
 
         # val_img_datases
@@ -114,17 +107,7 @@ def main(cfgs: List[TrainConfig]):
 
     train_dataset = [train[2] for train in train_list]
     train_datasets = [train_dataset[i] for i in train_indices]
-    print(len(train_dataset), len(train_datasets))
 
-    syn_dataset = SynchornizedDataset(train_datasets)
-    syn_dataloader = DataLoader(
-            syn_dataset,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_dl_workers,
-            persistent_workers=True,
-            collate_fn=BaseDataset.train_collate_fn_sync,
-        )
-    
     val_img_datases = [train[3] for train in train_list]
 
     # Initialize model
@@ -161,50 +144,7 @@ def main(cfgs: List[TrainConfig]):
     ]
 
     guru.info(f"Starting training from {trainer.global_step=}")
-    for epoch in (
-        pbar := tqdm(
-            range(start_epoch, cfgs[0].num_epochs),
-            initial=start_epoch,
-            total=cfgs[0].num_epochs,
-        )
-    ):
-        loss = 0
 
-        trainer.set_epoch(epoch)
-
-        # Zip the loaders to load one batch from each loader at each step
-        for batches in syn_dataloader:
-            #batches = [to_device(batch, device) for batch in batches]
-
-
-            batches = to_device(batches, device)
-            loss = trainer.train_step(batches)
-            loss.backward()
-            trainer.op_af_bk()
-
-            pbar.set_description(f"Loss: {loss:.6f}")
-
-        if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
-            epoch == cfgs[0].num_epochs - 1
-        ):
-            for validator in validators:
-                validator.save_train_videos(epoch)
-
-
-        if (epoch > 0 and epoch % cfg.validate_every == 0) or (
-            epoch == cfg.num_epochs - 1
-        ):
-            for ind, validator in enumerate(validators):
-              val_logs = validator.validate()
-              metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
-
-              with open(f"{cfg.work_dir}/validation_metrics_cam{ind}.txt", "a") as f:  
-                  f.write(f"Epoch {epoch}\n")
-                  f.write(metrics_str + "\n\n")
-
-    #####
-    #
-    #
     validator.save_train_videos(cfgs[0].num_epochs)
     for ind, validator in enumerate(validators):
       val_logs = validator.validate()
@@ -237,9 +177,6 @@ def initialize_and_checkpoint_model(
         vis=vis,
         port=port,
     )
-
-
-
     for train_dataset in train_datasets:
         Ks = train_dataset.get_Ks().to(device)
         w2cs = train_dataset.get_w2cs().to(device)

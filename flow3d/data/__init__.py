@@ -10,6 +10,34 @@ from .iphone_dataset import (
     iPhoneDatasetKeypointView,
     iPhoneDatasetVideoView,
 )
+import numpy as np 
+
+
+class SynchornizedDataset(Dataset):
+    def __init__(self, datasets):
+        self.datasets = datasets
+        self.lennnn = len(self.datasets[0])
+        print(len(self.datasets))
+        self.num_targets_per_frame = self.datasets[0].num_targets_per_frame
+
+    def __len__(self):
+        return self.lennnn 
+    
+
+    def __getitem__(self, index: int):
+        # Generate synchronized random indices for target frames
+        index = np.random.randint(0, self.lennnn)
+
+        target_inds = np.random.choice(
+                self.lennnn, (self.num_targets_per_frame,), replace=False
+            )
+        data_list = []
+        for dataset in self.datasets:
+            data = dataset.__getitem__(index, target_inds=target_inds)
+            data_list.append(data)
+
+        return data_list
+    
 
 
 def get_train_val_datasets(

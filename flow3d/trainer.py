@@ -216,31 +216,8 @@ class Trainer:
         N = batch[0]["target_ts"][0].shape[0]
 
 
-        '''
-        ts torch.Size([8])
-        w2cs torch.Size([8, 4, 4])
-        Ks torch.Size([8, 3, 3])
-        imgs torch.Size([8, 288, 512, 3])
-        depths torch.Size([8, 288, 512])
-        masks torch.Size([8, 288, 512])
-        valid_masks torch.Size([8, 288, 512])
-
-        #### 
-        query_tracks_2d 8 torch.Size([2017, 2])
-        target_ts 8 torch.Size([4])
-        target_w2cs 8 torch.Size([4, 4, 4])
-        target_Ks 8 torch.Size([4, 3, 3])
-        target_tracks_2d 8 torch.Size([4, 2017, 2])
-        target_visibles 8 torch.Size([4, 2017])
-        target_invisibles 8 torch.Size([4, 2017])
-        target_confidences 8 torch.Size([4, 2017])
-        target_track_depths 8 torch.Size([4, 2017])
-        '''
 
         import torch
-
-        # Iterate over each batch in the list of batches.
-        # Concatenate ts across all batches (assuming ts is already a tensor with shape (B,)).
         ts = torch.cat([b["ts"] for b in batch], dim=0)  # (sum of B across batches,)
 
         # Concatenate world-to-camera matrices (B, 4, 4).
@@ -274,25 +251,39 @@ class Trainer:
         target_invisibles = [invisible for b in batch for invisible in b["target_invisibles"]]
         target_confidences = [confidence for b in batch for confidence in b["target_confidences"]]
         target_track_depths = [depth for b in batch for depth in b["target_track_depths"]]
+        '''
+        ts torch.Size([8])
+        w2cs torch.Size([8, 4, 4])
+        Ks torch.Size([8, 3, 3])
+        imgs torch.Size([8, 288, 512, 3])
+        depths torch.Size([8, 288, 512])
+        masks torch.Size([8, 288, 512])
+        valid_masks torch.Size([8, 288, 512])
+
+        #### 
+        query_tracks_2d 8 torch.Size([2017, 2])
+        target_ts 8 torch.Size([4])
+        target_w2cs 8 torch.Size([4, 4, 4])
+        target_Ks 8 torch.Size([4, 3, 3])
+        target_tracks_2d 8 torch.Size([4, 2017, 2])
+        target_visibles 8 torch.Size([4, 2017])
+        target_invisibles 8 torch.Size([4, 2017])
+        target_confidences 8 torch.Size([4, 2017])
+        target_track_depths 8 torch.Size([4, 2017])
+        '''
  # List of (N, P) per batch
 
         ### num_targets_per_frame: 4
         _tic = time.time()
+        # overall 4 8
+        # print('overall', len(batch), len((batch[0]["target_ts"])))
         print(batch[0]["target_ts"][0])
-        print(batch[0]["target_ts"][1])
-        print(batch[0]["target_ts"][2])
-        print(batch[0]["target_ts"][3])
-
         print(batch[1]["target_ts"][0])
-        print(batch[1]["target_ts"][1])
-        print(batch[1]["target_ts"][2])
-        print(batch[1]["target_ts"][3])
+        print(batch[2]["target_ts"][0])
+        print(batch[3]["target_ts"][0])
+        print(ts, ts.shape, 'hongle ')
 
 
-        print(batch[0]["target_ts"][0].shape[0])
-        print(batch[0]["target_ts"][1].shape[0])
-        print(batch[0]["target_ts"][2].shape[0])
-        print(batch[0]["target_ts"][3].shape[0])
         print(len(target_track_depths), target_track_depths[0].shape)
         # (B, G, 3).
         means, quats = self.model.compute_poses_all(ts)  # (G, B, 3), (G, B, 4)
