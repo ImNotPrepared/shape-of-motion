@@ -34,7 +34,7 @@ from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.trainer import Trainer
 from flow3d.validator import Validator
 from flow3d.vis.utils import get_server
-
+from scipy.spatial.transform import Slerp, Rotation as R
 torch.set_float32_matmul_precision("high")
 
 def set_seed(seed):
@@ -56,7 +56,7 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 210_000
+    num_fg: int = 70_000
     num_bg: int = 14_000
     num_motion_bases: int = 21
     num_epochs: int = 500
@@ -65,8 +65,10 @@ class TrainConfig:
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 100
-    save_videos_every: int = 100
+    save_videos_every: int = 70
     ignore_cam_mask: int = 0
+    test_w2cs: str = ''
+    seq_name: str = ''
 
 @dataclass
 class TrainBikeConfig:
@@ -85,9 +87,53 @@ class TrainBikeConfig:
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 100
-    save_videos_every: int = 100
+    save_videos_every: int = 70
     ignore_cam_mask: int = 0
+    test_w2cs: str = ''
+    seq_name: str = ''
 
+
+def interpolate_cameras(c2w1, c2w2, alpha):
+    """
+    Interpolates between two camera extrinsics using slerp and lerp.
+
+    Args:
+        c2w1 (np.ndarray): First camera-to-world matrix (4x4).
+        c2w2 (np.ndarray): Second camera-to-world matrix (4x4).
+        alphas (list or np.ndarray): List of interpolation factors between 0 and 1.
+
+    Returns:
+        list: List of interpolated camera-to-world matrices.
+    """
+    # Extract rotations and translations
+    R1 = c2w1[:3, :3]
+    t1 = c2w1[:3, 3]
+    R2 = c2w2[:3, :3]
+    t2 = c2w2[:3, 3]
+    
+    # Create Rotation objects
+    key_rots = R.from_matrix([R1, R2])
+    key_times = [0, 1]
+    
+    # Create the slerp object
+    slerp = Slerp(key_times, key_rots)
+    
+    interpolated_c2ws = []
+
+    # Interpolate rotation at time alpha
+    r_interp = slerp([alpha])[0]
+    
+    # Perform lerp on translations
+    t_interp = (1 - alpha) * t1 + alpha * t2
+    
+    # Reconstruct the c2w matrix
+    c2w_interp = np.eye(4)
+    c2w_interp[:3, :3] = r_interp.as_matrix()
+    c2w_interp[:3, 3] = t_interp
+    
+    interpolated_c2ws.append(c2w_interp)
+    
+    return interpolated_c2ws
 
 def main(cfgs: List[TrainConfig]):
     train_list = []
@@ -151,6 +197,7 @@ def main(cfgs: List[TrainConfig]):
         ckpt_path,
         vis=cfgs[0].vis_debug,
         port=cfgs[0].port,
+        seq_name=cfg.seq_name
     )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
@@ -175,6 +222,23 @@ def main(cfgs: List[TrainConfig]):
         )
         for i, (view, val_img_dataset) in enumerate(zip(train_video_views, val_img_datases))
     ]
+    import json
+    md = json.load(open(cfg.test_w2cs, 'r'))
+    c2ws = []
+    for c in range(1, 6):
+      if c==5:
+          c=1
+      k, w2c =  md['k'][0][c], np.linalg.inv(md['w2c'][0][c])
+      c2ws.append(w2c)
+
+
+    all_interpolated_c2ws = []
+    for i in range(len(c2ws) - 1):
+        c2w1 = c2ws[i]
+        c2w2 = c2ws[i + 1]
+        interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
+        all_interpolated_c2ws.extend(interpolated)
+
 
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
@@ -203,8 +267,10 @@ def main(cfgs: List[TrainConfig]):
         if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
             epoch == cfgs[0].num_epochs - 1
         ):
-            for validator in validators:
+            for iiidx, validator in enumerate(validators):
+                validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
                 validator.save_train_videos(epoch)
+
 
 
         if (epoch > 0 and epoch % cfg.validate_every == 0) or (
@@ -236,7 +302,8 @@ def initialize_and_checkpoint_model(
     ckpt_path: str,
     vis: bool = False,
     port: int | None = None,
-    debug=False
+    debug=False,
+    seq_name: str = ''
 ):
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_path}")
@@ -252,6 +319,7 @@ def initialize_and_checkpoint_model(
         cfg.num_motion_bases,
         vis=vis,
         port=port,
+        seq_name=seq_name
     )
 
     for train_dataset in train_datasets:
@@ -281,6 +349,7 @@ def init_model_from_unified_tracks(
     num_motion_bases: int,
     vis: bool = False,
     port: int | None = None,
+    seq_name: str = ''
 ):
     # Prepare lists to collect data from each dataset
     tracks_3d_list = []
@@ -359,7 +428,7 @@ def init_model_from_unified_tracks(
 
         bg_points = StaticObservations(*combined_bg_data)
         assert bg_points.check_sizes()
-        bg_params = init_bg(bg_points)
+        bg_params = init_bg(bg_points, seq_name=seq_name)
         bg_params = bg_params.to(device)
 
     tracks_3d = tracks_3d.to(device)
@@ -433,7 +502,9 @@ if __name__ == "__main__":
               lr=tyro.cli(SceneLRConfig, args=remaining_args),
               loss=tyro.cli(LossesConfig, args=remaining_args),
               optim=tyro.cli(OptimizerConfig, args=remaining_args),
-              train_indices=train_indices
+              train_indices=train_indices,
+              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/Processing{data_dict_1}/scripts/Dy_train_meta.json',
+              seq_name=seq_name
           )
           for i in range(4)
       ]
@@ -450,7 +521,9 @@ if __name__ == "__main__":
               lr=tyro.cli(SceneLRConfig, args=remaining_args),
               loss=tyro.cli(LossesConfig, args=remaining_args),
               optim=tyro.cli(OptimizerConfig, args=remaining_args),
-              train_indices=train_indices
+              train_indices=train_indices,
+              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/Processing{data_dict_1}/scripts/Dy_train_meta.json',
+              seq_name=seq_name
           )
           for i in range(4)
       ]     

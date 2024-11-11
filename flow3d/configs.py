@@ -42,7 +42,7 @@ class LossesConfig:
     w_depth_const: float = 0.1
     w_depth_grad: float = 0.1
     w_track: float = 2.0
-    w_mask: float = 700.0
+    w_mask: float = 9.0
     w_smooth_bases: float = 0.1
     w_smooth_tracks: float = 2.0
     w_scale_var: float = 0.01
@@ -76,7 +76,7 @@ class OptimizerConfig:
     ### Densify.
     densify_xys_grad_threshold: float = 0.0002# 0.0002 # 0.0002
     densify_scale_threshold: float = 0.01 
-          #  should_split = is_grad_too_high & (is_scale_too_big | is_radius_too_big)
+    #  should_split = is_grad_too_high & (is_scale_too_big | is_radius_too_big)
       #  should_dup = is_grad_too_high & ~is_scale_too_big
     densify_screen_threshold: float = 0.05
     stop_densify_steps: int = 2000

@@ -11,10 +11,10 @@ combinations=(
 
 # Array of individual device IDs
 id_devices=(
-  4
   5
-  6
-  7
+  5
+  0
+  0
 )
 
 # Run the training scripts in parallel with each combination

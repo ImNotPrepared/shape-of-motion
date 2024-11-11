@@ -139,9 +139,6 @@ class CasualDataset(BaseDataset):
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
 
-
-        
-        #  self.cache_dir = f"datasets/davis/flow3d_preprocessed/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
         #print(frame_names)
         #print(self.video_name)
@@ -154,6 +151,9 @@ class CasualDataset(BaseDataset):
           self.frame_names = frame_names[start:end:self.glb_step][:-1]
         elif self.video_name=='_dance':
           self.frame_names = frame_names[start:end:self.glb_step]#[:-1]
+        elif self.video_name=='':
+          self.frame_names = frame_names[start:end:self.glb_step][:-1]
+
         frame_names=self.frame_names
         print(self.start, self.end)
 
@@ -423,8 +423,6 @@ class CasualDataset(BaseDataset):
         return self.load_modest_depth(index)
 
     def load_modest_depth(self, index) -> torch.Tensor:
-
-
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
         #print(self.depth_dir, path, int(self.frame_names[index]))
         to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
@@ -445,11 +443,7 @@ class CasualDataset(BaseDataset):
         depth = input_tensor.squeeze(0).squeeze(0) 
         return depth
 
-
     def load_duster_moncheck_depth(self, index) -> torch.Tensor:
-# /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
-# /toy_512_4/00194.npy /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//toy_512_4
-# /data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/4/disp_0.npz
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
         path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')

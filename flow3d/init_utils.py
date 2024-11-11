@@ -93,14 +93,26 @@ def init_fg_from_tracks_3d(
     # Initialize gaussian orientations as random.
     quats = torch.rand(num_fg, 4)
     # Initialize gaussian opacities.
-    opacities = torch.logit(torch.full((num_fg,), 0.97))
+    opacities = torch.logit(torch.full((num_fg,), 0.7))
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
 
+    '''
     path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
     new_pt_cld = np.load(path)["data"]
     print('dyn_len', len(new_pt_cld))
 
     print('-'*50 + 'Initializing Gaussians' + '-'*50)
+    path = #'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
+    new_pt_cld = np.load(path)["data"]
+    params =  initialize_new_params(new_pt_cld)
+    means = params['means3D']
+    quats = params['unnorm_rotations']
+    scales = params['log_scales']
+    colors = params['rgb_colors']
+    opacities = params['logit_opacities']
+    '''
+
+
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
     return gaussians
@@ -108,6 +120,7 @@ def init_fg_from_tracks_3d(
 
 def init_bg(
     points: StaticObservations,
+    seq_name: str
 ) -> GaussianParams:
     """
     using dataclasses instead of individual tensors so we know they're consistent
@@ -140,17 +153,12 @@ def init_bg(
     ).roll(1, dims=-1)
     bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
 
-    print(f"Shape of bg_means: {bg_means.shape}")
-    print(f"Shape of bg_quats: {bg_quats.shape}")
-    print(f"Shape of bkdg_scales: {bkdg_scales.shape}")
-    print(f"Shape of bkdg_colors: {bkdg_colors.shape}")
-    print(f"Shape of bg_opacities: {bg_opacities.shape}")
-    print(f"Shape of bg_scene_center: {bg_scene_center.shape}")
-    print(f"Shape of bkdg_feats: {bkdg_feats.shape}")
+    if seq_name == 'dance':
+      path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
+    else:
+      path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
 
-
-    # path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
-    path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
+    
     new_pt_cld = np.load(path)["data"]
     params =  initialize_new_params(new_pt_cld)
     bg_means = params['means3D']
@@ -176,7 +184,7 @@ def init_bg(
         bkdg_colors,
         bg_opacities,
         scene_center=bg_scene_center,
-        scene_scale=1.0, #bg_scene_scale,
+        scene_scale=bg_scene_scale,
         feats=bkdg_feats,
     )
     return gaussians

@@ -18,9 +18,10 @@ id_devices=(
 )
 
 # Run the training scripts in parallel with each combination
+# --work-dir "$WORK_DIR" --port "$PORT" 
 tasks=()
 for i in {0..3}; do
-  CUDA_VISIBLE_DEVICES=${id_devices[i]} python dance_glb.py --seq_name 'dance' --train_indices ${combinations[i]} --exp "$EXP" &
+  CUDA_VISIBLE_DEVICES=${id_devices[i]} sh custom.sh results_dance/YES_RGB_10x 2311 &
   tasks+=("$!")
 done
 
