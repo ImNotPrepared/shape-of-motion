@@ -37,11 +37,6 @@ from flow3d.vis.utils import get_server
 
 torch.set_float32_matmul_precision("high")
 
-
-    
-
-
-
 def set_seed(seed):
     # Set the seed for generating random numbers
     np.random.seed(seed)
@@ -61,9 +56,9 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 70_000
-    num_bg: int = 10_000
-    num_motion_bases: int = 11
+    num_fg: int = 210_000
+    num_bg: int = 14_000
+    num_motion_bases: int = 21
     num_epochs: int = 500
     port: int | None = None
     vis_debug: bool = False 
@@ -72,6 +67,27 @@ class TrainConfig:
     validate_every: int = 100
     save_videos_every: int = 100
     ignore_cam_mask: int = 0
+
+@dataclass
+class TrainBikeConfig:
+    work_dir: str
+    train_indices: list
+    data: CustomDataConfig
+    lr: SceneLRConfig
+    loss: LossesConfig
+    optim: OptimizerConfig
+    num_fg: int = 140_000
+    num_bg: int = 70_000
+    num_motion_bases: int = 35
+    num_epochs: int = 500
+    port: int | None = None
+    vis_debug: bool = False 
+    batch_size: int = 8
+    num_dl_workers: int = 4
+    validate_every: int = 100
+    save_videos_every: int = 100
+    ignore_cam_mask: int = 0
+
 
 def main(cfgs: List[TrainConfig]):
     train_list = []
@@ -174,10 +190,10 @@ def main(cfgs: List[TrainConfig]):
 
         # Zip the loaders to load one batch from each loader at each step
         for batches in syn_dataloader:
-            #batches = [to_device(batch, device) for batch in batches]
-
-
             batches = to_device(batches, device)
+
+        #or batches in zip(*train_loaders):
+        #    batches = [to_device(batch, device) for batch in batches]
             loss = trainer.train_step(batches)
             loss.backward()
             trainer.op_af_bk()
@@ -238,15 +254,13 @@ def initialize_and_checkpoint_model(
         port=port,
     )
 
-
-
     for train_dataset in train_datasets:
         Ks = train_dataset.get_Ks().to(device)
         w2cs = train_dataset.get_w2cs().to(device)
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1)
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
@@ -353,21 +367,49 @@ def init_model_from_unified_tracks(
 
 if __name__ == "__main__":
     import wandb
-
     import argparse
-    work_dir = './results_dance/output_noC_noO_rd_dancing_w_track_generaltest_/'
-    wandb.init(name=work_dir.split('/')[-1])
+    upper_switch = {
+      'bike': [
+        'bike_undist_cam0',
+        '_bike'       
+      ],
+
+      'bike_test':[
+        'toy_512_',
+        ''       
+      ],
+
+      'dance': [
+        'undist_cam0',
+        '_dance'
+      ],
+
+
+    }
+
+
     parser = argparse.ArgumentParser(description="Wandb Training Script")
+    parser.add_argument(
+        "--seq_name", type=str, default="complete"
+    )
     parser.add_argument(
         "--train_indices", type=int, nargs='+', default=[0, 1, 2, 3], help="List of training indices"
     )
+
     parser.add_argument(
-        "--work_dir_name", type=str, default="complete"
+        "--exp", type=str, 
     )
 
     args, remaining_args = parser.parse_known_args()
 
     train_indices = args.train_indices
+    seq_name = args.seq_name
+
+    data_dict_0, data_dict_1  = upper_switch[seq_name][0], upper_switch[seq_name][1]
+    work_dir = f'./results{data_dict_1}/{args.exp}/'
+    wandb.init(name=work_dir.split('/')[-1])
+
+
     def find_missing_number(nums):
         full_set = {0, 1, 2, 3}
         missing_number = full_set - set(nums)
@@ -378,20 +420,38 @@ if __name__ == "__main__":
     
     print(work_dir)
     import tyro
-    configs = [
-        TrainConfig(
-            work_dir=work_dir,
-            data=CustomDataConfig(
-                seq_name=f"undist_cam0{i+1}",
-                root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-                video_name='_dance'
-            ),
-            # Pass the unknown arguments to tyro.cli
-            lr=tyro.cli(SceneLRConfig, args=remaining_args),
-            loss=tyro.cli(LossesConfig, args=remaining_args),
-            optim=tyro.cli(OptimizerConfig, args=remaining_args),
-            train_indices=train_indices
-        )
-        for i in range(4)
-    ]
+    if seq_name == 'dance':
+      configs = [
+          TrainConfig(
+              work_dir=work_dir,
+              data=CustomDataConfig(
+                  seq_name=f"{data_dict_0}{i+1}",
+                  root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+                  video_name=data_dict_1,
+              ),
+              # Pass the unknown arguments to tyro.cli
+              lr=tyro.cli(SceneLRConfig, args=remaining_args),
+              loss=tyro.cli(LossesConfig, args=remaining_args),
+              optim=tyro.cli(OptimizerConfig, args=remaining_args),
+              train_indices=train_indices
+          )
+          for i in range(4)
+      ]
+    else:
+      configs = [
+          TrainBikeConfig(
+              work_dir=work_dir,
+              data=CustomDataConfig(
+                  seq_name=f"{data_dict_0}{i+1}",
+                  root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
+                  video_name=data_dict_1,
+              ),
+              # Pass the unknown arguments to tyro.cli
+              lr=tyro.cli(SceneLRConfig, args=remaining_args),
+              loss=tyro.cli(LossesConfig, args=remaining_args),
+              optim=tyro.cli(OptimizerConfig, args=remaining_args),
+              train_indices=train_indices
+          )
+          for i in range(4)
+      ]     
     main(configs)

@@ -43,6 +43,30 @@ def o3d_knn(pts, num_knn):
     return np.array(sq_dists), np.array(indices)
 
 
+def initialize_new_params(new_pt_cld):
+    num_pts = new_pt_cld.shape[0]
+    means3D = torch.tensor(new_pt_cld[:, :3], dtype=torch.float, device="cuda")  # Convert to torch tensor, shape [num_gaussians, 3]
+    unnorm_rots = torch.tensor(np.tile([1, 0, 0, 0], (num_pts, 1)), dtype=torch.float, device="cuda")  # [num_gaussians, 4]
+    logit_opacities = torch.zeros((num_pts), dtype=torch.float, device="cuda")  # [num_gaussians, 1]
+    
+    sq_dist, _ = o3d_knn(new_pt_cld[:, :3], 3)  # Assuming o3d_knn returns a numpy array
+    mean3_sq_dist = np.clip(sq_dist.mean(-1), a_min=0.0000001, a_max=None)
+    
+    seg = np.ones((num_pts))
+    seg_colors_np = np.stack((seg, np.zeros_like(seg), 1 - seg), -1)  # [num_pts, 3]
+
+    # Convert everything to torch tensors
+    params = {
+        'means3D': means3D,  # Already converted
+        'rgb_colors': torch.tensor(new_pt_cld[:, 3:6], dtype=torch.float, device="cuda"),  # [num_gaussians, 3]
+        'unnorm_rotations': unnorm_rots,  # Already converted
+        'seg_colors': torch.tensor(seg_colors_np, dtype=torch.float, device="cuda"),  # [num_pts, 3]
+        'logit_opacities': logit_opacities,  # Already converted
+        'log_scales': torch.tensor(np.tile(np.log(np.sqrt(mean3_sq_dist))[..., None], (1, 3)), dtype=torch.float, device="cuda")  # [num_gaussians, 3]
+    }
+
+    return params
+    
 def init_fg_from_tracks_3d(
     cano_t: int, tracks_3d: TrackObservations, motion_coefs: torch.Tensor
 ) -> GaussianParams:
@@ -75,33 +99,7 @@ def init_fg_from_tracks_3d(
     path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
     new_pt_cld = np.load(path)["data"]
     print('dyn_len', len(new_pt_cld))
-    def initialize_new_params(new_pt_cld):
-        #print(new_pt_cld.shape)
-        num_pts = new_pt_cld.shape[0]
-        means3D = new_pt_cld[:, :3] # [num_gaussians, 3]
-        unnorm_rots = np.tile([1, 0, 0, 0], (num_pts, 1)) # [num_gaussians, 4]
-        logit_opacities = torch.zeros((num_pts, 1), dtype=torch.float, device="cuda")
-        sq_dist, _ = o3d_knn(new_pt_cld[:, :3], 3)
-        mean3_sq_dist = sq_dist.mean(-1).clip(min=0.0000001)
-        seg = np.ones((num_pts))
-        params = {
-            'means3D': means3D,
-            'rgb_colors': new_pt_cld[:, 3:6],
-            'unnorm_rotations': unnorm_rots,
-            'seg_colors': np.stack((seg, np.zeros_like(seg), 1 - seg), -1),
-            'logit_opacities': logit_opacities,
-            'log_scales':  np.tile(np.log(np.sqrt(mean3_sq_dist))[..., None], (1, 3)),
-        }
-        params = {k: torch.nn.Parameter(torch.tensor(v).cuda().float().contiguous().requires_grad_(True)) for k, v in
-                  params.items()}
-      
-        return params
 
-    #new_params = initialize_new_params(new_pt_cld)
-    #means, quats, scales, colors, opacities = new_params['means3D'], new_params['unnorm_rotations'], new_params['log_scales'], new_params['rgb_colors'], new_params['logit_opacities'] 
-    #dists2centers = torch.norm(means_cano[:, None] - sampled_centers, dim=-1)
-    #motion_coefs = 10 * torch.exp(-dists2centers)
-    #motion_coefs = 
     print('-'*50 + 'Initializing Gaussians' + '-'*50)
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
@@ -125,11 +123,6 @@ def init_bg(
 
     bkdg_colors = torch.logit(points.colors)
     bkdg_feats = (points.feats)
-    print('---'*50, bkdg_feats)
-
-    # Initialize gaussian scales: find the average of the three nearest
-    # neighbors in the first frame for each point and use that as the
-    # scale.
     dists, _ = knn(points.xyz, 3)
     dists = torch.from_numpy(dists)
     bg_scales = dists.mean(dim=-1, keepdim=True)
@@ -146,6 +139,36 @@ def init_bg(
         * (local_normals * points.normals).sum(-1, keepdim=True).acos_()
     ).roll(1, dims=-1)
     bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
+
+    print(f"Shape of bg_means: {bg_means.shape}")
+    print(f"Shape of bg_quats: {bg_quats.shape}")
+    print(f"Shape of bkdg_scales: {bkdg_scales.shape}")
+    print(f"Shape of bkdg_colors: {bkdg_colors.shape}")
+    print(f"Shape of bg_opacities: {bg_opacities.shape}")
+    print(f"Shape of bg_scene_center: {bg_scene_center.shape}")
+    print(f"Shape of bkdg_feats: {bkdg_feats.shape}")
+
+
+    # path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
+    path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
+    new_pt_cld = np.load(path)["data"]
+    params =  initialize_new_params(new_pt_cld)
+    bg_means = params['means3D']
+    bg_quats = params['unnorm_rotations']
+    bkdg_scales = params['log_scales']
+    bkdg_colors = params['rgb_colors']
+    bg_opacities = params['logit_opacities']
+    bg_scene_center = bg_means.mean(0)
+    bkdg_feats=torch.ones(bg_means.shape[0], 32)
+
+    print(f"Shape of bg_means: {bg_means.shape}")
+    print(f"Shape of bg_quats: {bg_quats.shape}")
+    print(f"Shape of bkdg_scales: {bkdg_scales.shape}")
+    print(f"Shape of bkdg_colors: {bkdg_colors.shape}")
+    print(f"Shape of bg_opacities: {bg_opacities.shape}")
+    print(f"Shape of bg_scene_center: {bg_scene_center.shape}")
+    print(f"Shape of bkdg_feats: {bkdg_feats.shape}")
+
     gaussians = GaussianParams(
         bg_means,
         bg_quats,
@@ -153,10 +176,9 @@ def init_bg(
         bkdg_colors,
         bg_opacities,
         scene_center=bg_scene_center,
-        scene_scale=bg_scene_scale,
+        scene_scale=1.0, #bg_scene_scale,
         feats=bkdg_feats,
     )
-    print('intit_bck_gasu'+'-'*50)
     return gaussians
 
 

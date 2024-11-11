@@ -99,7 +99,7 @@ class CasualDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
-        video_name: str = '',
+        video_name: str = '_bike',
         **_,
     ):
         super().__init__()
@@ -126,9 +126,9 @@ class CasualDataset(BaseDataset):
         # self.camera_path
         self.video_name = video_name# '_dance'
         self.hard_indx_dict = {
-          '_bike': [49, 350, 3], 
+          '_bike': [49, 349, 3], 
           '_dance': [1477, 1778, 3],
-          '': [183, 295, 1],
+          '': [183, 294, 1],
         }
         self.glb_first_indx =  self.hard_indx_dict[self.video_name][0]
         self.glb_last_indx = self.hard_indx_dict[self.video_name][1]
@@ -143,12 +143,17 @@ class CasualDataset(BaseDataset):
         
         #  self.cache_dir = f"datasets/davis/flow3d_preprocessed/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
+        #print(frame_names)
+        #print(self.video_name)
 
         if end == -1:
             end = len(frame_names)
         self.start = start
         self.end = end
-        self.frame_names = frame_names[start:end:self.glb_step]
+        if self.video_name=='_bike':
+          self.frame_names = frame_names[start:end:self.glb_step][:-1]
+        elif self.video_name=='_dance':
+          self.frame_names = frame_names[start:end:self.glb_step]#[:-1]
         frame_names=self.frame_names
         print(self.start, self.end)
 
@@ -251,6 +256,7 @@ class CasualDataset(BaseDataset):
               )
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
+        print(self.frame_names)
         assert (
             len(frame_names) == len(w2cs) == len(Ks)
         ), f"{len(frame_names)}, {len(w2cs)}, {len(Ks)}"
@@ -356,7 +362,10 @@ class CasualDataset(BaseDataset):
         #  dcpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned/')
         #  dinov2_feature = torch.tensor(np.load(dcpath)).to(torch.float32)
         #except:
-        ddpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
+        ddpath = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/images//', 
+        f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/')
+        # fg_only_is_False
+        
         dinov2_feature = torch.tensor(np.load(ddpath)).to(torch.float32)          
         return dinov2_feature
 
@@ -373,9 +382,19 @@ class CasualDataset(BaseDataset):
             r = self.mask_erosion_radius
             mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
           except:
-            path = f"{self.mask_dir}/dyn_mask_{int(self.frame_names[index])}.npz"
-            r = self.mask_erosion_radius
-            mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+            try:
+              path = f"{self.mask_dir}/dyn_mask_{int(self.frame_names[index])}.npz"
+              r = self.mask_erosion_radius
+              mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+            except:
+              #/data3/zihanwa3/Capstone-DSR/Processing/sam_v2_dyn_mask/3
+              new_mask_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/sam_v2_dyn_mask/{self.mask_dir[-1]}'
+              #print(self.mask_dir)
+              path = f"{new_mask_dir}/dyn_mask_{int(self.frame_names[index])}.npz"
+              mask = np.load(path)['dyn_mask'][0][:, :, None].repeat(3, axis=2)
+              
+              
+                   
         # 2160, 3840, 1
 
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
@@ -404,10 +423,16 @@ class CasualDataset(BaseDataset):
         return self.load_modest_depth(index)
 
     def load_modest_depth(self, index) -> torch.Tensor:
+
+
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
         #print(self.depth_dir, path, int(self.frame_names[index]))
         to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
-        new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
+        if self.video_name == '_dance':
+          new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
+        else:#elif self.video_name == '':
+          new_path = f'/data3/zihanwa3/Capstone-DSR/monst3r/bike_aligned_preset_k/'
+          path = path.replace('toy_512_', 'undist_cam')
         # duster_depth_clean_dance_512_4_mons_cp
         path = path.replace(to_replace, new_path)
         path = path.replace('disp', 'frame')
@@ -419,6 +444,33 @@ class CasualDataset(BaseDataset):
         # If you want to remove the added dimensions
         depth = input_tensor.squeeze(0).squeeze(0) 
         return depth
+
+
+    def load_duster_moncheck_depth(self, index) -> torch.Tensor:
+# /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
+# /toy_512_4/00194.npy /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//toy_512_4
+# /data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/4/disp_0.npz
+        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
+        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
+        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')
+        path = path.replace('toy_512_', '')
+        path = path.replace('disp_', '')
+        # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1564/conf_depth_2.npy
+
+        # print(path.split('/')[-1][:-4], path.split('/')[-2])
+        # 1477 undist_cam01
+        final_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/' + path.split('/')[-1][:-4] + '/' + 'conf_depth_' + str(int(path.split('/')[-2][-1])-1) + '.npy'
+        disp_map =  np.load(final_path)#['depth']
+        depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float()
+        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+        output_size = (288, 512)  # (height, width)
+        resized_tensor = F.interpolate(input_tensor, size=output_size, mode='bilinear', align_corners=False)
+
+        # If you want to remove the added dimensions
+        depth = resized_tensor.squeeze(0).squeeze(0) 
+        return depth
+    
 
     def load_duster_depth(self, index) -> torch.Tensor:
 # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
@@ -432,15 +484,21 @@ class CasualDataset(BaseDataset):
         try:
           final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/' + path.split('/')[-1][:-4] + '/' + path.split('/')[-2] + '.npz'
           disp_map =  np.load(final_path)['depth']
+          depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
+          depth = torch.from_numpy(depth_map).float()
+          input_tensor = depth.unsqueeze(0).unsqueeze(0) 
         except:
           #/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/undist_cam01/1477.npz
 
           # /data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/1478/1.npz
-          final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/' +  path.split('/')[-1][:-4] + '/' + path.split('/')[-2][-1] + '.npz'
-          disp_map =  np.load(final_path)['depth']
-        depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
-        depth = torch.from_numpy(depth_map).float()
-        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+          #final_path = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/' +  path.split('/')[-1][:-4] + '/' + path.split('/')[-2][-1] + '.npz'
+          # print(path.split('/')[-1][:-4], path.split('/')[-2][-1] + '.npz')
+          final_path = f"/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300_testonly/{os.path.splitext(os.path.basename(path))[0]}/pc_depth_{os.path.basename(os.path.dirname(path))[-1]}.npy"
+
+          disp_map =  np.load(final_path)#['depth']          
+          depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
+          depth = torch.from_numpy(depth_map).float()
+          input_tensor = depth.unsqueeze(0).unsqueeze(0) 
 
         output_size = (288, 512)  # (height, width)
         resized_tensor = F.interpolate(input_tensor, size=output_size, mode='bilinear', align_corners=False)
@@ -547,6 +605,57 @@ class CasualDataset(BaseDataset):
         return tracks_3d, visibles, invisibles, confidences, colors, feats
 
 
+    def get_set_bkgd_points(
+        self,
+        num_samples: int,
+        use_kf_tstamps: bool = False,
+        stride: int = 8,
+        down_rate: int = 8,
+        min_per_frame: int = 64,
+        **kwargs,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        start = 0
+        end = self.num_frames
+        H, W = self.get_image(0).shape[:2]
+        bg_geometry = []
+
+
+        points = (
+            torch.einsum(
+                "ij,pj->pi",
+                torch.linalg.inv(K),
+                F.pad(grid[bool_mask], (0, 1), value=1.0),
+            )
+            * depth[bool_mask][:, None]
+        )
+        points = torch.einsum(
+            "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
+        )
+        point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
+        point_colors = img[bool_mask]
+        point_feats = feat[bool_mask]
+
+        num_sel = max(len(points) // down_rate, min_per_frame)
+        sel_idcs = np.random.choice(len(points), num_sel, replace=False)
+        points = points[sel_idcs]
+        point_normals = point_normals[sel_idcs]
+        point_colors = point_colors[sel_idcs]
+        point_feats = point_feats[sel_idcs]
+        guru.debug(f"{query_idx=} {points.shape=}")
+        bg_geometry.append((points, point_normals, point_colors, point_feats))
+
+        bg_points, bg_normals, bg_colors, bg_feats = map(
+            partial(torch.cat, dim=0), zip(*bg_geometry)
+        )
+        if len(bg_points) > num_samples:
+            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
+            bg_points = bg_points[sel_idcs]
+            bg_normals = bg_normals[sel_idcs]
+            bg_colors = bg_colors[sel_idcs]
+            bg_feats = bg_feats[sel_idcs]
+
+        return bg_points, bg_normals, bg_colors, bg_feats
+    
 
     def get_bkgd_points(
         self,

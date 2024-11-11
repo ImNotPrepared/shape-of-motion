@@ -141,7 +141,7 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        self.seq_name='last2'
+        self.seq_name='bike_woc_300_wtf'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
@@ -161,9 +161,28 @@ class Renderer:
           t = t * 3
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/{t+1477}/pc.npz'
           pc = np.load(pc_dir)["data"]
-        elif self.seq_name == 'wtf':
+
+        elif self.seq_name == 'bike_woc':
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds_test/combined_pointcloud_{t+183}.npy'
+          pc = np.load(pc_dir)
+
+        elif self.seq_name == 'bike_woc_300':
           t = t * 3
-          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_dec/{t+1477}/pc.npz'
+          # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/BIKE_duster_depth_clean_300_testonly
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds_test_bike_300/combined_pointcloud_{t+49}.npy'
+          pc = np.load(pc_dir)
+
+        elif self.seq_name == 'bike_woc_300_wtf':
+          t = t 
+          # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/BIKE_duster_depth_clean_300_testonly
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/BIKE_no_preset/{t}/pc.npz'
+          pc = np.load(pc_dir)['data']
+
+
+        elif self.seq_name == 'wtf':
+          #t = t * 3
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_monst3r_adj_cao/{t}/pc.npz'
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_dec/{t+1477}/pc.npz'
           pc = np.load(pc_dir)["data"]
         elif self.seq_name == 'plz':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/tmp/undist_cam01/{t}/pc.npz'

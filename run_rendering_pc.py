@@ -29,7 +29,7 @@ class RenderConfig:
 def main(cfg: RenderConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ckpt_path = f"results/{cfg.work_dir}/checkpoints/last.ckpt"
+    ckpt_path = f"results_old/{cfg.work_dir}/checkpoints/last.ckpt"
     print(ckpt_path)
 
     #init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'    

@@ -19,7 +19,7 @@ class BGLRConfig:
     scales: float = 5e-3
     quats: float = 1e-3
     colors: float = 1e-2
-    feats: float = 0
+    feats: float = 1e-3
 
 
 @dataclass
@@ -42,7 +42,7 @@ class LossesConfig:
     w_depth_const: float = 0.1
     w_depth_grad: float = 0.1
     w_track: float = 2.0
-    w_mask: float = 9.0
+    w_mask: float = 700.0
     w_smooth_bases: float = 0.1
     w_smooth_tracks: float = 2.0
     w_scale_var: float = 0.01

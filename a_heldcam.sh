@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Array of individual combinations, represented as arrays of numbers
+EXP=$1
 combinations=(
   "1 2 3"
   "1 2 0"
@@ -10,8 +11,8 @@ combinations=(
 
 # Array of individual device IDs
 id_devices=(
-  5
-  6
+  0
+  1
   2
   3
 )
@@ -19,7 +20,7 @@ id_devices=(
 # Run the training scripts in parallel with each combination
 tasks=()
 for i in {0..3}; do
-  CUDA_VISIBLE_DEVICES=${id_devices[i]} python dance_glb.py --train_indices ${combinations[i]} &
+  CUDA_VISIBLE_DEVICES=${id_devices[i]} python dance_glb.py --seq_name 'dance' --train_indices ${combinations[i]} --exp "$EXP" &
   tasks+=("$!")
 done
 

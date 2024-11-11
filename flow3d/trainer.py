@@ -277,14 +277,10 @@ class Trainer:
         _tic = time.time()
         # overall 4 8
         # print('overall', len(batch), len((batch[0]["target_ts"])))
-        print(batch[0]["target_ts"][0])
-        print(batch[1]["target_ts"][0])
-        print(batch[2]["target_ts"][0])
-        print(batch[3]["target_ts"][0])
-        print(ts, ts.shape, 'hongle ')
 
 
-        print(len(target_track_depths), target_track_depths[0].shape)
+
+
         # (B, G, 3).
         means, quats = self.model.compute_poses_all(ts)  # (G, B, 3), (G, B, 4)
 
@@ -408,7 +404,7 @@ class Trainer:
                   rendered_feats * valid_masks[..., None]
                   + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
               )
-              feat_loss = 0.8 * F.l1_loss(rendered_feats, feats) 
+              feat_loss = 0.8 * F.mse_loss(rendered_feats, feats) 
               loss += feat_loss * self.losses_cfg.w_feat
 
 

@@ -44,6 +44,7 @@ from flow3d.validator import Validator
 from flow3d.vis.utils import get_server
 
 torch.set_float32_matmul_precision("high")
+# _wheel_only
 new_mask_dir = "/data3/zihanwa3/Capstone-DSR/Processing_bike/sam_v2_dyn_mask"
 gif_frames = []
 
@@ -57,14 +58,13 @@ for sub_dir in ['1', '2', '3', '4']:
             combined_mask = np.load(new_mask_path)['dyn_mask'][0]
             mask = cast(torch.Tensor, combined_mask)
             mask=torch.tensor(mask)
-            print(mask.shape)
             
             masks.append(mask)
     
     if len(masks) > 0:
         mask_video = torch.stack(masks, dim=0)
         iio.mimwrite(
-            osp.join(video_dir, "masks.mp4"),
+            osp.join(video_dir, f"{sub_dir}_masks.mp4"),
             make_video_divisble((mask_video.numpy() * 255).astype(np.uint8)),
             fps=15,
         )
