@@ -27,6 +27,7 @@ from flow3d.init_utils import (
     init_motion_params_with_procrustes,
     run_initial_optim,
     vis_init_params,
+    init_fg_motion_bases_from_single_t,
 )
 from flow3d.params import GaussianParams, MotionBases
 from flow3d.scene_model import SceneModel
@@ -67,6 +68,7 @@ class TrainConfig:
     validate_every: int = 100
     save_videos_every: int = 70
     ignore_cam_mask: int = 0
+    test_validator_every: int = 1
     test_w2cs: str = ''
     seq_name: str = ''
 
@@ -264,12 +266,13 @@ def main(cfgs: List[TrainConfig]):
 
             pbar.set_description(f"Loss: {loss:.6f}")
 
+            
         if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
             epoch == cfgs[0].num_epochs - 1
         ):
             for iiidx, validator in enumerate(validators):
                 validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
-                validator.save_train_videos(epoch)
+                validator.save_train_videos_images(epoch)
 
 
 
@@ -328,7 +331,7 @@ def initialize_and_checkpoint_model(
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    # run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
+    #run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
@@ -363,7 +366,7 @@ def init_model_from_unified_tracks(
     confidences_list = []
     colors_list = []
     feats_list = []
-
+    tracks_3d = None
     # Loop over the datasets and collect data
     for train_dataset in train_datasets:
         tracks_3d, visibles, invisibles, confidences, colors, feats = train_dataset.get_tracks_3d(num_fg)
@@ -397,16 +400,23 @@ def init_model_from_unified_tracks(
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    #init_fg_motion_bases_from_single_t()
 
+    old_method = False
+    if old_method == True:
+      motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
+          tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
+      )
 
-    #if seq_name == 'dance':
-    #    cano_t = #/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/1528
-    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
-    )
+      motion_bases = motion_bases.to(device)
+      fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
+    else:
+      cano_t = 1615 # int((1615-1477) / 3)
+      # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1615/fg_proj_img_0.png
+      #if seq_name == 'dance':
+      #    cano_t = #/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/1528
 
-    motion_bases = motion_bases.to(device)
-    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
+      motion_bases, motion_coefs, fg_params = init_fg_motion_bases_from_single_t(tracks_3d, num_motion_bases, rot_type, cano_t)#, sampled_centers
     ##### OUTPUT: MotionBases, fg_params
     ## CAN BE REPLACED BY:
     # init_fg_motion_bases_from_single_t
@@ -445,7 +455,7 @@ def init_model_from_unified_tracks(
         bg_params = init_bg(bg_points, seq_name=seq_name)
         bg_params = bg_params.to(device)
 
-    tracks_3d = None
+    
     if tracks_3d:
       tracks_3d = tracks_3d.to(device)
     return fg_params, motion_bases, bg_params, tracks_3d
@@ -498,7 +508,21 @@ if __name__ == "__main__":
     data_dict_0, data_dict_1  = upper_switch[seq_name][0], upper_switch[seq_name][1]
     work_dir = f'./results{data_dict_1}/{args.exp}/'
     wandb.init(name=work_dir.split('/')[-1])
-
+    '''
+    def load_depth(self, index) -> torch.Tensor:
+    #  load_da2_depth load_duster_depth load_org_depth
+    if self.depth_type == 'modest':
+        depth = self.load_modest_depth(index)
+    elif self.depth_type == 'da2':
+        depth = self.load_da2_depth(index)
+    elif self.depth_type == 'dust3r':
+        depth = self.load_modest_depth(index)       
+    elif self.depth_type == 'monst3r':
+        depth = self.load_monster_depth(index)    
+    elif self.depth_type == 'monst3r+dust3r':
+        depth = self.load_duster_moncheck_depth(index) 
+    
+    '''
 
     def find_missing_number(nums):
         full_set = {0, 1, 2, 3}

@@ -15,8 +15,8 @@ class FGLRConfig:
 @dataclass
 class BGLRConfig:
     means: float = 1.6e-4
-    opacities: float = 5e-2
-    scales: float = 5e-3
+    opacities: float = 1e-2
+    scales: float = 5e-4
     quats: float = 1e-3
     colors: float = 1e-2
     feats: float = 1e-3

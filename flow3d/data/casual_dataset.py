@@ -62,7 +62,7 @@ class CustomDataConfig:
     depth_type: str = "modest"
     camera_type: Literal["droid_recon"] = "droid_recon"
     track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir"
-    mask_erosion_radius: int = 7
+    mask_erosion_radius: int = 1
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
@@ -80,13 +80,7 @@ class CasualDataset(BaseDataset):
         res: str = "480p",
         image_type: str = "JPEGImages",
         mask_type: str = "Annotations",
-        depth_type: Literal[
-            "aligned_depth_anything",
-            "aligned_depth_anything_v2",
-            "depth_anything",
-            "depth_anything_v2",
-            "unidepth_disp",
-        ] = "aligned_depth_anything",
+        depth_type: str = "aligned_depth_anything",
         camera_type: Literal["droid_recon"] = "droid_recon",
         track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir",
         mask_erosion_radius: int = 3,
@@ -128,7 +122,7 @@ class CasualDataset(BaseDataset):
         self.glb_last_indx = self.hard_indx_dict[self.video_name][1]
         self.glb_step = self.hard_indx_dict[self.video_name][2]
 
-        self.depth_dir = f"{root_dir}/{depth_type}/{res}/{seq_name}"
+        self.depth_dir = f"{root_dir}/aligned_depth_anything/{res}/{seq_name}"
         self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
@@ -424,6 +418,8 @@ class CasualDataset(BaseDataset):
            depth = self.load_monster_depth(index)    
         elif self.depth_type == 'monst3r+dust3r':
            depth = self.load_duster_moncheck_depth(index)    
+        elif self.depth_type == 'load_vanila_depth':
+           depth = self.load_vanila_depth(index)
 
         return depth
 
@@ -473,14 +469,28 @@ class CasualDataset(BaseDataset):
     def load_duster_moncheck_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')
-        path = path.replace('toy_512_', '')
-        path = path.replace('disp_', '')
-        # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1564/conf_depth_2.npy
 
-        # print(path.split('/')[-1][:-4], path.split('/')[-2])
-        # 1477 undist_cam01
-        final_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/' + path.split('/')[-1][:-4] + '/' + 'conf_depth_' + str(int(path.split('/')[-2][-1])-1) + '.npy'
+        if 'dance' in self.video_name:
+          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')
+          path = path.replace('toy_512_', '')
+          path = path.replace('disp_', '')
+          # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1564/conf_depth_2.npy
+
+          # print(path.split('/')[-1][:-4], path.split('/')[-2])
+          # 1477 undist_cam01
+          final_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/' + path.split('/')[-1][:-4] + '/' + 'conf_depth_' + str(int(path.split('/')[-2][-1])-1) + '.npy'
+        else:
+          path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/duster_depth_new_2.7/')
+          path = path.replace('toy_512_', '')
+          path = path.replace('disp_', '')
+          # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1564/conf_depth_2.npy
+
+          # print(path.split('/')[-1][:-4], path.split('/')[-2])
+          # 1477 undist_cam01
+          # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_bike_100_bs1/173/conf_depth_0.npy
+          final_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_bike_100_bs1/' + path.split('/')[-1][:-4] + '/' + 'conf_depth_' + str(int(path.split('/')[-2][-1])-1) + '.npy'
+          
+                  
         disp_map =  np.load(final_path)#['depth']
         depth_map = np.clip(disp_map, a_min=1e-8, a_max=1e6)
         depth = torch.from_numpy(depth_map).float()
@@ -492,7 +502,14 @@ class CasualDataset(BaseDataset):
         depth = resized_tensor.squeeze(0).squeeze(0) 
         return depth
     
-
+    def load_vanila_depth(self, index) -> torch.Tensor:
+        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
+        disp = np.load(path)
+        depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
+        depth = torch.from_numpy(depth).float()
+        depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
+        return depth
+    
     def load_duster_depth(self, index) -> torch.Tensor:
 # /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything/
 # /toy_512_4/00194.npy /data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//toy_512_4
