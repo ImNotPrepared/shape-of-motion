@@ -39,8 +39,8 @@ class LossesConfig:
     w_rgb: float = 7.0
     w_feat: float = 7.0 #0.01
     w_depth_reg: float = 0.7
-    w_depth_const: float = 0.1
-    w_depth_grad: float = 0.1
+    w_depth_const: float = 0.0
+    w_depth_grad: float = 0.0
     w_track: float = 2.0
     w_mask: float = 9.0
     w_smooth_bases: float = 0.1
@@ -81,11 +81,11 @@ class OptimizerConfig:
     densify_screen_threshold: float = 0.05
     stop_densify_steps: int = 2000
     ### Cull.
-    cull_opacity_threshold: float = 0.1# 0.1
+    cull_opacity_threshold: float = 0.3# 0.1
     # is_opacity_too_small = opacities < cfg.cull_opacity_threshold
-    cull_scale_threshold: float = 0.5# 0.5
+    cull_scale_threshold: float = 0.2# 0.5
     # is_scale_too_big = scales.amax(dim=-1) > cull_scale_threshold
-    cull_screen_threshold: float = 0.15#0.15
+    cull_screen_threshold: float = 0.07#0.15
     ##                is_radius_too_big = (
     #                self.running_stats["max_radii"] > cfg.cull_screen_threshold
     #            )

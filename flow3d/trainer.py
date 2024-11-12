@@ -767,6 +767,18 @@ class Trainer:
             f"{self.model.num_gaussians} gaussians left"
         )
 
+
+    @torch.no_grad()
+    def _cull_perfect_mask(self, global_step, should_cull):
+        num_fg = self.model.num_fg_gaussians
+        should_fg_cull = should_cull[:num_fg]
+        fg_param_map = self.model.fg.cull_params(should_fg_cull)
+        for param_name, new_params in fg_param_map.items():
+            full_param_name = f"fg.params.{param_name}"
+            optimizer = self.optimizers[full_param_name]
+            remove_from_optim(optimizer, [new_params], should_fg_cull)
+
+
     @torch.no_grad()
     def _cull_control_step(self, global_step):
         # Cull gaussians.
@@ -789,6 +801,7 @@ class Trainer:
                     self.running_stats["max_radii"] > cfg.cull_screen_threshold
                 )
         should_cull = is_opacity_too_small | is_radius_too_big | is_scale_too_big
+        
         should_fg_cull = should_cull[:num_fg]
         should_bg_cull = should_cull[num_fg:]
 

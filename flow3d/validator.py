@@ -317,6 +317,15 @@ class Validator:
         video_dir = osp.join(self.save_dir, "videos", f"epoch_{epoch:04d}")
         os.makedirs(video_dir, exist_ok=True)
         fps = 15.0
+
+        # Create directories to save individual frames
+        image_dir = osp.join(video_dir, "images")
+        depth_dir = osp.join(video_dir, "depths")
+        mask_dir = osp.join(video_dir, "masks")
+        os.makedirs(image_dir, exist_ok=True)
+        os.makedirs(depth_dir, exist_ok=True)
+        os.makedirs(mask_dir, exist_ok=True)
+
         # Render video.
         video = []
         ref_pred_depths = []
@@ -348,17 +357,44 @@ class Validator:
             )
             # Putting results onto CPU since it will consume unnecessarily
             # large GPU memory for long sequence OW.
-            video.append(torch.cat([img, rendered["img"][0]], dim=1).cpu())
+            combined_img = torch.cat([img, rendered["img"][0]], dim=1).cpu()
+            video.append(combined_img)
+
+            # Save individual RGB images
+            rgb_image = (combined_img.numpy() * 255).astype(np.uint8)
+            rgb_image = make_video_divisble(rgb_image)
+            rgb_image_path = osp.join(image_dir, f"frame_{batch_idx:04d}.png")
+            iio.imwrite(rgb_image_path, rgb_image)
+
             ref_pred_depth = torch.cat(
                 (depth[..., None], rendered["depth"][0]), dim=1
             ).cpu()
             ref_pred_depths.append(ref_pred_depth)
             depth_min = min(depth_min, ref_pred_depth.min().item())
             depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
+
+            # Save individual depth maps
+            depth_colormap = apply_depth_colormap(
+                ref_pred_depth,
+                near_plane=depth_min,
+                far_plane=depth_max
+            )
+            depth_image = (depth_colormap.numpy() * 255).astype(np.uint8)
+            depth_image = make_video_divisble(depth_image)
+            depth_image_path = osp.join(depth_dir, f"depth_{batch_idx:04d}.png")
+            iio.imwrite(depth_image_path, depth_image)
+
             if rendered["mask"] is not None:
-                #masks.append(rendered["mask"][0].cpu().squeeze(-1))
-                #print(mask.shape, rendered["mask"][0].shape, 'MASKSHAPE')
-                masks.append(torch.cat([mask, rendered["mask"][0].squeeze(-1)], dim=1).cpu())
+                combined_mask = torch.cat(
+                    [mask, rendered["mask"][0].squeeze(-1)], dim=1
+                ).cpu()
+                masks.append(combined_mask)
+
+                # Save individual masks
+                mask_image = (combined_mask.numpy() * 255).astype(np.uint8)
+                mask_image = make_video_divisble(mask_image)
+                mask_image_path = osp.join(mask_dir, f"mask_{batch_idx:04d}.png")
+                iio.imwrite(mask_image_path, mask_image)
 
         # rgb video
         video = torch.stack(video, dim=0)

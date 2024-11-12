@@ -253,11 +253,11 @@ def main(cfgs: List[TrainConfig]):
         trainer.set_epoch(epoch)
 
         # Zip the loaders to load one batch from each loader at each step
-        for batches in syn_dataloader:
-            batches = to_device(batches, device)
+        #for batches in syn_dataloader:
+        #    batches = to_device(batches, device)
 
-        #or batches in zip(*train_loaders):
-        #    batches = [to_device(batch, device) for batch in batches]
+        for batches in zip(*train_loaders):
+            batches = [to_device(batch, device) for batch in batches]
             loss = trainer.train_step(batches)
             loss.backward()
             trainer.op_af_bk()
@@ -328,7 +328,7 @@ def initialize_and_checkpoint_model(
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
+    # run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
@@ -341,6 +341,11 @@ def initialize_and_checkpoint_model(
     guru.info(f"Saving initialization to {ckpt_path}")
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
+
+
+
+
+
 
 def init_model_from_unified_tracks(
     train_datasets,
@@ -392,12 +397,21 @@ def init_model_from_unified_tracks(
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
+
+    #if seq_name == 'dance':
+    #    cano_t = #/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/1528
     motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
         tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
     )
 
     motion_bases = motion_bases.to(device)
     fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
+    ##### OUTPUT: MotionBases, fg_params
+    ## CAN BE REPLACED BY:
+    # init_fg_motion_bases_from_single_t
+
+
     fg_params = fg_params.to(device)
 
     bg_params = None
@@ -431,7 +445,9 @@ def init_model_from_unified_tracks(
         bg_params = init_bg(bg_points, seq_name=seq_name)
         bg_params = bg_params.to(device)
 
-    tracks_3d = tracks_3d.to(device)
+    tracks_3d = None
+    if tracks_3d:
+      tracks_3d = tracks_3d.to(device)
     return fg_params, motion_bases, bg_params, tracks_3d
 
 if __name__ == "__main__":
@@ -469,10 +485,15 @@ if __name__ == "__main__":
         "--exp", type=str, 
     )
 
+    parser.add_argument(
+        "--depth_type", type=str, default="modest"
+    )
+
     args, remaining_args = parser.parse_known_args()
 
     train_indices = args.train_indices
     seq_name = args.seq_name
+    depth_type = args.depth_type
 
     data_dict_0, data_dict_1  = upper_switch[seq_name][0], upper_switch[seq_name][1]
     work_dir = f'./results{data_dict_1}/{args.exp}/'
@@ -497,6 +518,7 @@ if __name__ == "__main__":
                   seq_name=f"{data_dict_0}{i+1}",
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                   video_name=data_dict_1,
+                  depth_type=depth_type,
               ),
               # Pass the unknown arguments to tyro.cli
               lr=tyro.cli(SceneLRConfig, args=remaining_args),
@@ -516,6 +538,7 @@ if __name__ == "__main__":
                   seq_name=f"{data_dict_0}{i+1}",
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                   video_name=data_dict_1,
+                  depth_type=depth_type,
               ),
               # Pass the unknown arguments to tyro.cli
               lr=tyro.cli(SceneLRConfig, args=remaining_args),

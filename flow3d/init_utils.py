@@ -4,7 +4,7 @@ from typing import Literal
 import cupy as cp
 import imageio.v3 as iio
 import numpy as np
-
+import cv2
 # from pytorch3d.ops import sample_farthest_points
 import roma
 import torch
@@ -188,6 +188,217 @@ def init_bg(
         feats=bkdg_feats,
     )
     return gaussians
+def depthmap_to_camera_coordinates(depthmap, camera_intrinsics, pseudo_focal=None):
+    """
+    Args:
+        - depthmap (HxW array):
+        - camera_intrinsics: a 3x3 matrix
+    Returns:
+        pointmap of absolute coordinates (HxWx3 array), and a mask specifying valid pixels.
+    """
+    camera_intrinsics = np.float32(camera_intrinsics)
+    H, W = depthmap.shape
+
+    # Compute 3D ray associated with each pixel
+    # Strong assumption: there are no skew terms
+    assert camera_intrinsics[0, 1] == 0.0
+    assert camera_intrinsics[1, 0] == 0.0
+    if pseudo_focal is None:
+        fu = camera_intrinsics[0, 0]
+        fv = camera_intrinsics[1, 1]
+    else:
+        assert pseudo_focal.shape == (H, W)
+        fu = fv = pseudo_focal
+    cu = camera_intrinsics[0, 2]
+    cv = camera_intrinsics[1, 2]
+
+    u, v = np.meshgrid(np.arange(W), np.arange(H))
+    z_cam = depthmap
+    x_cam = (u - cu) * z_cam / fu
+    y_cam = (v - cv) * z_cam / fv
+    X_cam = np.stack((x_cam, y_cam, z_cam), axis=-1).astype(np.float32)
+
+    # Mask for valid coordinates
+    valid_mask = (depthmap > 0.0)
+    return X_cam, valid_mask
+
+def depthmap_to_absolute_camera_coordinates(depthmap, camera_intrinsics, camera_pose, **kw):
+    """
+    Args:
+        - depthmap (HxW array):
+        - camera_intrinsics: a 3x3 matrix
+        - camera_pose: a 4x3 or 4x4 cam2world matrix
+    Returns:
+        pointmap of absolute coordinates (HxWx3 array), and a mask specifying valid pixels."""
+    X_cam, valid_mask = depthmap_to_camera_coordinates(depthmap, camera_intrinsics)
+
+    X_world = X_cam # default
+    if camera_pose is not None:
+        # R_cam2world = np.float32(camera_params["R_cam2world"])
+        # t_cam2world = np.float32(camera_params["t_cam2world"]).squeeze()
+        R_cam2world = camera_pose[:3, :3]
+        t_cam2world = camera_pose[:3, 3]
+
+        # Express in absolute coordinates (invalid depth values)
+        X_world = np.einsum("ik, vuk -> vui", R_cam2world, X_cam) + t_cam2world[None, None, :]
+
+    return X_world, valid_mask
+
+
+def init_fg_motion_bases_from_single_t(
+    num_bases: int,
+    rot_type: Literal["quat", "6d"],
+    cano_t: int,
+    cluster_init_method: str = "kmeans",
+    min_mean_weight: float = 0.1,
+):
+    
+    ### xyz
+    org_path='/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dinov2features/resized_512_Aligned_fg_only/'
+    fg_depth_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/'
+    from org_utils import get_preset_data, get_preset_dance
+    pose_matrices, intrinsics_matrices = get_preset_dance(image_size=512)
+    #fg_pc = np.load(f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/{cano_t}/fg_pc.npz')
+    all_fg_pc_feats = []  # List to collect features from all cameras
+    all_fg_pc_xyz = []    # List to collect 3D point coordinates from all cameras
+    all_fg_pc_clr = []    # List to collect colors from all cameras
+
+    for cam_id in range(1, 5):
+        camera_intrinsics = pose_matrices[cam_id - 1]
+        camera_pose = intrinsics_matrices[cam_id - 1]
+        feat_path = org_path + f'undist_cam0{cam_id}/{cano_t:05d}.npy'
+        fg_feat = np.load(feat_path)
+
+        fg_depth_path_single = fg_depth_path + f'{cano_t}/fg_depth_{cam_id - 1}.png'
+        fg_image_path_single = fg_depth_path + f'{cano_t}/fg_proj_img_{cam_id - 1}.png'
+
+        # Load the depth map and image
+        fg_depth = cv2.imread(fg_depth_path_single, cv2.IMREAD_UNCHANGED)
+        fg_image = cv2.imread(fg_image_path_single)
+
+        # Compute point cloud coordinates
+        fg_pc_xyz = depthmap_to_absolute_camera_coordinates(fg_depth, camera_intrinsics, camera_pose)
+        valid_indices = np.where(fg_depth > 0)
+        fg_pc_clr = fg_image[valid_indices[0], valid_indices[1], :]
+        fg_pc_feat = fg_feat[valid_indices[0], valid_indices[1], :]
+
+        # Append the results to the lists
+        all_fg_pc_feats.append(fg_pc_feat)
+        all_fg_pc_xyz.append(fg_pc_xyz[valid_indices])
+        all_fg_pc_clr.append(fg_pc_clr)
+
+    # Concatenate all the features, point cloud coordinates, and colors along the new dimension
+    all_fg_pc_feats = np.concatenate(all_fg_pc_feats, axis=0)  # Concatenate features along the batch dimension
+    all_fg_pc_xyz = np.concatenate(all_fg_pc_xyz, axis=0)      # Concatenate 3D points along the batch dimension
+    all_fg_pc_clr = np.concatenate(all_fg_pc_clr, axis=0)      # Concatenate colors along the batch dimension
+
+    # Combine everything into a single tensor if needed
+    combined_data = np.concatenate((all_fg_pc_xyz, all_fg_pc_clr, all_fg_pc_feats), axis=1)  # Shape: [N, 10]
+    feats = combined_data[:, 6:]
+    new_pt_cld = combined_data[:, :6]
+        
+    perfect_pc_path = f'{cano_t}'
+    perfect_pc = np.load(perfect_pc_path)
+    means_cano = combined_data[:, :3]#tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
+
+    scene_center = means_cano.median(dim=0).values
+
+    sampled_centers, num_bases, labels = sample_initial_bases_centers_without_tracks(
+        cluster_init_method, cano_t, perfect_pc, feats, num_bases
+    )
+
+    # assign each point to the label to compute the cluster weight
+    ids, counts = labels.unique(return_counts=True)
+    ids = ids[counts > 50] ### 100
+    sampled_centers = sampled_centers[:, ids]
+
+    # compute basis weights from the distance to the cluster centers
+    dists2centers = torch.norm(means_cano[:, None] - sampled_centers, dim=-1)
+    motion_coefs = 10 * torch.exp(-dists2centers)
+
+    init_rots, init_ts = [], []
+
+    if rot_type == "quat":
+        id_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=device)
+        rot_dim = 4
+    else:
+        id_rot = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], device=device)
+        rot_dim = 6
+
+    init_rots = id_rot.reshape(1, 1, rot_dim).repeat(num_bases, num_frames, 1)
+    init_ts = torch.zeros(num_bases, num_frames, 3, device=device)
+    errs_before = np.full((num_bases, num_frames), -1.0)
+    errs_after = np.full((num_bases, num_frames), -1.0)
+
+    tgt_ts = list(range(cano_t - 1, -1, -1)) + list(range(cano_t, num_frames))
+    print(f"{tgt_ts=}")
+    skipped_ts = {}
+    for n, cluster_id in enumerate(ids):
+        mask_in_cluster = labels == cluster_id
+        cluster = tracks_3d.xyz[mask_in_cluster].transpose(
+            0, 1
+        )  # [num_frames, n_pts, 3]
+
+        # weights = get_weights_for_procrustes(cluster, visibilities)
+        prev_t = cano_t
+        cluster_skip_ts = []
+        for cur_t in tgt_ts:
+            # compute pairwise transform from cano_t
+            procrustes_weights = (
+                weights[cano_t]
+                * weights[cur_t]
+                / 2
+            )
+            if procrustes_weights.sum() < min_mean_weight * num_frames:
+                init_rots[n, cur_t] = init_rots[n, prev_t]
+                init_ts[n, cur_t] = init_ts[n, prev_t]
+                cluster_skip_ts.append(cur_t)
+            else:
+                se3, (err, err_before) = solve_procrustes(
+                    cluster[cano_t],
+                    cluster[cur_t],
+                    weights=procrustes_weights,
+                    enforce_se3=True,
+                    rot_type=rot_type,
+                )
+                init_rot, init_t, _ = se3
+                assert init_rot.shape[-1] == rot_dim
+                # double cover
+                if rot_type == "quat" and torch.linalg.norm(
+                    init_rot - init_rots[n][prev_t]
+                ) > torch.linalg.norm(-init_rot - init_rots[n][prev_t]):
+                    init_rot = -init_rot
+                init_rots[n, cur_t] = init_rot
+                init_ts[n, cur_t] = init_t
+                if err == np.nan:
+                    print(f"{cur_t=} {err=}")
+                    print(f"{procrustes_weights.isnan().sum()=}")
+                if err_before == np.nan:
+                    print(f"{cur_t=} {err_before=}")
+                    print(f"{procrustes_weights.isnan().sum()=}")
+                errs_after[n, cur_t] = err
+                errs_before[n, cur_t] = err_before
+            prev_t = cur_t
+        skipped_ts[cluster_id.item()] = cluster_skip_ts
+
+
+    
+
+
+
+    bases = MotionBases(init_rots, init_ts)
+
+
+    params =  initialize_new_params(new_pt_cld)
+    means = params['means3D']
+    quats = params['unnorm_rotations']
+    scales = params['log_scales']
+    colors = params['rgb_colors']
+    opacities = params['logit_opacities']
+    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
+
+    return bases, motion_coefs, tracks_3d#, sampled_centers
+
 
 
 def init_motion_params_with_procrustes(
@@ -201,13 +412,11 @@ def init_motion_params_with_procrustes(
     port: int | None = None,
 ) -> tuple[MotionBases, torch.Tensor, TrackObservations]:
     device = tracks_3d.xyz.device
-    print(tracks_3d.xyz.shape)
-    print(tracks_3d.feats.shape)
+
     num_frames = tracks_3d.xyz.shape[1]
 
     means_cano = tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
-    print('aaaaaaaaaaaaaaaaFUCKOFFaaaaaaaaaaaa', )
-    # remove outliers
+
     scene_center = means_cano.median(dim=0).values
     print(f"{scene_center=}") # 
     dists = torch.norm(means_cano - scene_center, dim=-1)
@@ -610,6 +819,39 @@ def vis_tracks_3d(
             point_size=0.05,
             point_shape="diamond",
         )
+def sample_initial_bases_centers_without_tracks(
+    mode: str, cano_t: int, xyz, feats, num_bases: int
+):
+    """
+    :param mode: "farthest" | "hdbscan" | "kmeans"
+    :param tracks_3d: [G, T, 3]
+    :param cano_t: canonical index
+    :param num_bases: number of SE3 bases
+    """
+    assert mode in ["farthest", "hdbscan", "kmeans"]
+    means_canonical = xyz
+    clustering_method = 'feat'
+
+    if clustering_method == 'feat':
+        print(f"{feats.shape=}")  # [N, C]
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(feats)
+
+        # Perform K-Means clustering
+        kmeans = KMeans(n_clusters=num_bases, random_state=42)
+        labels = kmeans.fit_predict(X_scaled)
+
+    num_bases = labels.max().item() + 1
+    sampled_centers = torch.stack(
+        [
+            means_canonical[torch.tensor(labels == i)].median(dim=0).values
+            for i in range(num_bases)
+        ]
+    )[None]
+    return sampled_centers, num_bases, torch.tensor(labels)
+
+
 
 
 def sample_initial_bases_centers(
@@ -630,7 +872,6 @@ def sample_initial_bases_centers(
 
     # num_bases
     if clustering_method == 'feat':
-        from sklearn.cluster import SpectralClustering
         feats = tracks_3d.feats  # Now feats is a NumPy array
         print(f"{feats.shape=}")  # [N, C]
         from sklearn.preprocessing import StandardScaler

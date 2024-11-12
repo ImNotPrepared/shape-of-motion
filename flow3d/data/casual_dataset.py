@@ -59,13 +59,7 @@ class CustomDataConfig:
     res: str = ""
     image_type: str = "images"
     mask_type: str = "masks"
-    depth_type: Literal[
-        "aligned_depth_anything",
-        "aligned_depth_anything_v2",
-        "depth_anything",
-        "depth_anything_v2",
-        "unidepth_disp",
-    ] = "aligned_depth_anything"
+    depth_type: str = "modest"
     camera_type: Literal["droid_recon"] = "droid_recon"
     track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir"
     mask_erosion_radius: int = 7
@@ -399,9 +393,9 @@ class CasualDataset(BaseDataset):
 
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
         bg_mask = ~fg_mask
-        fg_mask_erode = fg_mask #cv2.erode(
-        #    fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
-        #)
+        fg_mask_erode = cv2.erode(
+            fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
         bg_mask_erode = bg_mask#cv2.erode(
         #    bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
         #)
@@ -420,7 +414,40 @@ class CasualDataset(BaseDataset):
 
     def load_depth(self, index) -> torch.Tensor:
         #  load_da2_depth load_duster_depth load_org_depth
-        return self.load_modest_depth(index)
+        if self.depth_type == 'modest':
+           depth = self.load_modest_depth(index)
+        elif self.depth_type == 'da2':
+           depth = self.load_da2_depth(index)
+        elif self.depth_type == 'dust3r':
+           depth = self.load_modest_depth(index)       
+        elif self.depth_type == 'monst3r':
+           depth = self.load_monster_depth(index)    
+        elif self.depth_type == 'monst3r+dust3r':
+           depth = self.load_duster_moncheck_depth(index)    
+
+        return depth
+
+    def load_monster_depth(self, index) -> torch.Tensor:
+        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
+        #print(self.depth_dir, path, int(self.frame_names[index]))
+        to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
+        if self.video_name == '_dance':
+          new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
+        else:#elif self.video_name == '':
+          new_path = f'/data3/zihanwa3/Capstone-DSR/monst3r/bike_aligned_preset_k/'
+          path = path.replace('toy_512_', 'undist_cam')
+        # duster_depth_clean_dance_512_4_mons_cp
+        path = path.replace(to_replace, new_path)
+        path = path.replace('disp', 'frame')
+        depth_map = np.load(path)
+        depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float()
+        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+
+        # If you want to remove the added dimensions
+        depth = input_tensor.squeeze(0).squeeze(0) 
+        return depth
+    
 
     def load_modest_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
