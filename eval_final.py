@@ -82,7 +82,7 @@ class TrainBikeConfig:
     optim: OptimizerConfig
     num_fg: int = 70_000
     num_bg: int = 70_000
-    num_motion_bases: int = 40
+    num_motion_bases: int = 14
     num_epochs: int = 500
     port: int | None = None
     vis_debug: bool = False 
@@ -243,60 +243,20 @@ def main(cfgs: List[TrainConfig]):
 
 
     guru.info(f"Starting training from {trainer.global_step=}")
-    for epoch in (
-        pbar := tqdm(
-            range(start_epoch, cfgs[0].num_epochs),
-            initial=start_epoch,
-            total=cfgs[0].num_epochs,
-        )
-    ):
-        loss = 0
-
-        trainer.set_epoch(epoch)
-
-        # Zip the loaders to load one batch from each loader at each step
-        #for batches in syn_dataloader:
-        #    batches = to_device(batches, device)
-
-        for batches in zip(*train_loaders):
-            batches = [to_device(batch, device) for batch in batches]
-            loss = trainer.train_step(batches)
-            loss.backward()
-            trainer.op_af_bk()
-
-            pbar.set_description(f"Loss: {loss:.6f}")
-
-            
-        if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
-            epoch == cfgs[0].num_epochs - 1
-        ):
-            for iiidx, validator in enumerate(validators):
-                validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
-                validator.save_train_videos_images(epoch)
-
-
-
-        if (epoch > 0 and epoch % cfg.validate_every == 0) or (
-            epoch == cfg.num_epochs - 1
-        ):
-            for ind, validator in enumerate(validators):
-              val_logs = validator.validate()
-              metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
-
-              with open(f"{cfg.work_dir}/validation_metrics_cam{ind}.txt", "a") as f:  
-                  f.write(f"Epoch {epoch}\n")
-                  f.write(metrics_str + "\n\n")
-
-    #####
-    #
-    #
-    validator.save_train_videos(cfgs[0].num_epochs)
+    
+    epoch = trainer.global_step
     for ind, validator in enumerate(validators):
       val_logs = validator.validate()
       metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
       with open(f"{cfg.work_dir}/validation_metrics_cam{ind}.txt", "a") as f:  
           f.write(f"Epoch {cfgs[0].num_epochs}\n")
           f.write(metrics_str + "\n\n")
+
+    for iiidx, validator in enumerate(validators):
+        validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
+        validator.save_train_videos_images(epoch)
+
+
 
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
@@ -312,165 +272,7 @@ def initialize_and_checkpoint_model(
         guru.info(f"model checkpoint exists at {ckpt_path}")
         return
 
-    Ks_fuse = []
-    w2cs_fuse = []
 
-    fg_params, motion_bases, bg_params, tracks_3d = init_model_from_unified_tracks(
-        train_datasets,
-        cfg.num_fg,
-        cfg.num_bg,
-        cfg.num_motion_bases,
-        vis=vis,
-        port=port,
-        seq_name=seq_name
-    )
-
-    for train_dataset in train_datasets:
-        Ks = train_dataset.get_Ks().to(device)
-        w2cs = train_dataset.get_w2cs().to(device)
-        Ks_fuse.append(Ks)
-        w2cs_fuse.append(w2cs)
-
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
-
-    Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
-    w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
-    if vis and cfg.port is not None:
-        server = get_server(port=cfg.port)
-        vis_init_params(server, fg_params, motion_bases)
-
-    model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
-
-    guru.info(f"Saving initialization to {ckpt_path}")
-    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
-    torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
-
-
-
-
-
-
-def init_model_from_unified_tracks(
-    train_datasets,
-    num_fg: int,
-    num_bg: int,
-    num_motion_bases: int,
-    vis: bool = False,
-    port: int | None = None,
-    seq_name: str = ''
-):
-    # Prepare lists to collect data from each dataset
-    tracks_3d_list = []
-    visibles_list = []
-    invisibles_list = []
-    confidences_list = []
-    colors_list = []
-    feats_list = []
-    tracks_3d = None
-    # Loop over the datasets and collect data
-    for train_dataset in train_datasets:
-        tracks_3d, visibles, invisibles, confidences, colors, feats = train_dataset.get_tracks_3d(num_fg)
-        tracks_3d_list.append(tracks_3d)
-        visibles_list.append(visibles)
-        invisibles_list.append(invisibles)
-        confidences_list.append(confidences)
-        colors_list.append(colors)
-        feats_list.append(feats)
-
-    # Concatenate the data
-    combined_tracks_3d = torch.cat(tracks_3d_list, dim=0)
-    combined_visibles = torch.cat(visibles_list, dim=0)
-    combined_invisibles = torch.cat(invisibles_list, dim=0)
-    combined_confidences = torch.cat(confidences_list, dim=0)
-    combined_colors = torch.cat(colors_list, dim=0)
-    combined_feats = torch.cat(feats_list, dim=0)
-
-    combined_data = (
-        combined_tracks_3d,
-        combined_visibles,
-        combined_invisibles,
-        combined_confidences,
-        combined_colors,
-        combined_feats,
-    )
-
-    tracks_3d = TrackObservations(*combined_data)
-
-    rot_type = "6d"
-    cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    #init_fg_motion_bases_from_single_t()
-    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
-    )
-
-    motion_bases = motion_bases.to(device)
-    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
-    old_method = True
-    if seq_name != 'dance':
-      if old_method == True:
-        motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-            tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
-        )
-
-        motion_bases = motion_bases.to(device)
-        fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
-      else:
-        cano_t = 216 # int((1615-1477) / 3)
-        # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1615/fg_proj_img_0.png
-        #if seq_name == 'dance':
-        #    cano_t = #/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/1528
-        org_path=f'/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_Aligned_fg_only/'
-        fg_depth_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_bike_100_bs1/'
-        #'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/'
-        from flow3d.org_utils import get_preset_data, get_preset_dance
-        get_data = get_preset_data(512)
-
-        motion_bases, motion_coefs, fg_params = init_fg_motion_bases_from_single_t(tracks_3d, num_motion_bases, rot_type, cano_t,                                                             
-            get_data=get_data, org_path=org_path, fg_depth_path=fg_depth_path, )#, sampled_centers
-      ##### OUTPUT: MotionBases, fg_params
-    ## CAN BE REPLACED BY:
-    # init_fg_motion_bases_from_single_t
-
-    motion_coefs = motion_coefs.float()
-    fg_params = fg_params.to(device)
-
-    bg_params = None
-    if num_bg > 0:
-        bg_points_list = []
-        bg_normals_list = []
-        bg_colors_list = []
-        bg_feats_list = []
-
-        for train_dataset in train_datasets:
-            bg_points, bg_normals, bg_colors, bg_feats = train_dataset.get_bkgd_points(num_bg)
-            bg_points_list.append(bg_points)
-            bg_normals_list.append(bg_normals)
-            bg_colors_list.append(bg_colors)
-            bg_feats_list.append(bg_feats)
-
-        combined_bg_points = torch.cat(bg_points_list, dim=0)
-        combined_bg_normals = torch.cat(bg_normals_list, dim=0)
-        combined_bg_colors = torch.cat(bg_colors_list, dim=0)
-        combined_bg_feats = torch.cat(bg_feats_list, dim=0)
-
-        combined_bg_data = (
-            combined_bg_points,
-            combined_bg_normals,
-            combined_bg_colors,
-            combined_bg_feats,
-        )
-
-        bg_points = StaticObservations(*combined_bg_data)
-        assert bg_points.check_sizes()
-        bg_params = init_bg(bg_points, seq_name=seq_name)
-        bg_params = bg_params.to(device)
-
-    
-    if tracks_3d:
-      tracks_3d = tracks_3d.to(device)
-    return fg_params, motion_bases, bg_params, tracks_3d
 
 if __name__ == "__main__":
     import wandb
@@ -520,21 +322,6 @@ if __name__ == "__main__":
     data_dict_0, data_dict_1  = upper_switch[seq_name][0], upper_switch[seq_name][1]
     work_dir = f'./results{data_dict_1}/{args.exp}/'
     wandb.init(name=work_dir.split('/')[-1])
-    '''
-    def load_depth(self, index) -> torch.Tensor:
-    #  load_da2_depth load_duster_depth load_org_depth
-    if self.depth_type == 'modest':
-        depth = self.load_modest_depth(index)
-    elif self.depth_type == 'da2':
-        depth = self.load_da2_depth(index)
-    elif self.depth_type == 'dust3r':
-        depth = self.load_modest_depth(index)       
-    elif self.depth_type == 'monst3r':
-        depth = self.load_monster_depth(index)    
-    elif self.depth_type == 'monst3r+dust3r':
-        depth = self.load_duster_moncheck_depth(index) 
-    
-    '''
 
     def find_missing_number(nums):
         full_set = {0, 1, 2, 3}
