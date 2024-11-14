@@ -160,9 +160,14 @@ def init_bg(
       elif init_w_pc ==2:
         path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz'
         #path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
-
-      
         new_pt_cld = np.load(path)["data"]
+        path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
+        new_pt_cld_ = np.load(path)["data"]
+
+        print(new_pt_cld.shape, new_pt_cld_.shape)
+        new_pt_cld = np.concatenate((new_pt_cld, new_pt_cld_), axis=0)
+
+
         params =  initialize_new_params(new_pt_cld)
         bg_means = params['means3D']
         bg_quats = params['unnorm_rotations']
@@ -835,7 +840,7 @@ def sample_initial_bases_centers(
     print(f"{xyz.shape=}") # [N, T, 3]
 
     # clustering_method = 'feat'
-    clustering_method = None
+    clustering_method = 'feat'
 
     # num_bases
     if clustering_method == 'feat':

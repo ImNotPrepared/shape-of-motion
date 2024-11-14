@@ -433,7 +433,7 @@ def init_model_from_unified_tracks(
     ## CAN BE REPLACED BY:
     # init_fg_motion_bases_from_single_t
 
-    motion_coefs = motion_coefs.float()
+    motion_coefs = motion_coefs#.float()
     fg_params = fg_params.to(device)
 
     bg_params = None
@@ -575,6 +575,7 @@ if __name__ == "__main__":
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                   video_name=data_dict_1,
                   depth_type=depth_type,
+                  super_fast=True
               ),
               # Pass the unknown arguments to tyro.cli
               lr=tyro.cli(SceneLRConfig, args=remaining_args),

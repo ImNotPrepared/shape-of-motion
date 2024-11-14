@@ -349,6 +349,8 @@ class Validator:
     @torch.no_grad()
     def validate_imgs(self):
         guru.info("rendering validation images...")
+
+        print(len(self.val_img_loader))
         if self.val_img_loader is None:
             return
 
@@ -356,94 +358,106 @@ class Validator:
         for batch_idx, batch in enumerate(
             tqdm(self.val_img_loader, desc="Rendering video", leave=False)
         ):
-            print(batch_idx,  batch["w2cs"].shape)            
+            print('ggggg')            
             batch = {
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
             # ().
-            t = batch["ts"][batch_idx]
-            # (4, 4).
-            w2c = batch["w2cs"][batch_idx]
-            # (3, 3).
-            K = batch["Ks"][batch_idx]
-            # (H, W, 3).
-            img = batch["imgs"][batch_idx]
-            # (H, W).
-            depth = batch["depths"][batch_idx]
+            print(batch["ts"])
+            for batch_idx in range(0, len(batch["ts"]), 5):
+              t = batch["ts"][batch_idx]
+              # (4, 4).
+              w2c = batch["w2cs"][batch_idx]
+              # (3, 3).
+              K = batch["Ks"][batch_idx]
+              # (H, W, 3).
+              img = batch["imgs"][batch_idx]
+              # (H, W).
+              depth = batch["depths"][batch_idx]
+              
+              mask = (batch["masks"][batch_idx] > 0.9).float()
 
-            mask = batch["masks"][batch_idx]
+              img_wh = img.shape[-2::-1]
 
-            img_wh = img.shape[-2::-1]
-
-            glb_pc = self.glb_pc
-
-
-            '''# Assuming you have all the required inputs defined:
-            abs_rel_error, estimated_depth = unproject_image(
-                img, w2c, K, depth, mask, self.glb_pc, img_wh
-            )'''
-            #ratio = torch.max(gt_depth_valid / est_depth_valid, est_depth_valid / gt_depth_valid)
-            #delta = ratio < 1.25
-            #delta1 = torch.mean(delta.float())
+              glb_pc = self.glb_pc
 
 
-            #self.glb_pc = 
-            frame_name = batch["frame_names"][0]
+              '''# Assuming you have all the required inputs defined:
+              abs_rel_error, estimated_depth = unproject_image(
+                  img, w2c, K, depth, mask, self.glb_pc, img_wh
+              )'''
+              #ratio = torch.max(gt_depth_valid / est_depth_valid, est_depth_valid / gt_depth_valid)
+              #delta = ratio < 1.25
+              #delta1 = torch.mean(delta.float())
 
-            valid_mask = batch.get(
-                "valid_masks", torch.ones_like(batch["imgs"][..., 0])
-            )
-            # (1, H, W).
-            fg_mask = batch["masks"]
 
-            # (H, W).
-            covisible_mask = batch.get(
-                "covisible_masks",
-                torch.ones_like(fg_mask),
-            )
-            rendered = self.model.render(
-                t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
-            )
-            #WITHOUT 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 1, 288, 512]) torch.Size([1, 288, 512])   
-            #WITH 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 288, 512]) torch.Size([288, 512]) 
-            # print(rendered["img"].shape, valid_mask.shape, covisible_mask.shape, fg_mask.shape)
-            valid_mask *= covisible_mask
-            fg_valid_mask = fg_mask * valid_mask
-            bg_valid_mask = (1 - fg_mask) * valid_mask
-            main_valid_mask = valid_mask if self.has_bg else fg_valid_mask
+              #self.glb_pc = 
+              frame_name = batch["frame_names"][0]
 
-            self.mde_metric.update(
-                img, w2c, K, depth, mask, glb_pc, img_wh
-            )
-            # torch.Size([101, 288, 512]) torch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512, 1])
-            #print(mask.shape, rendered["mask"].shape)
-            # torch.Size([288, 512]) torch.Size([1, 288, 512, 1])
-            print(rendered["img"].shape, img.shape)
-            self.iou_metric.update(
-                rendered['mask'].squeeze(0).squeeze(-1), mask
-            )
-            main_valid_mask = torch.ones_like(img[None, ...])
-            img = img[None, ...]
-            self.psnr_metric.update(rendered["img"], img, main_valid_mask)
-            self.ssim_metric.update(rendered["img"], img, main_valid_mask)
-            self.lpips_metric.update(rendered["img"], img, main_valid_mask)
+              valid_mask = batch.get(
+                  "valid_masks", torch.ones_like(batch["imgs"][..., 0])
+              )
+              # (1, H, W).
+              fg_mask = (batch["masks"] > 0.9).float()
 
-            if self.has_bg:
-                self.fg_psnr_metric.update(rendered["img"], img, fg_valid_mask)
-                self.fg_ssim_metric.update(rendered["img"], img, fg_valid_mask)
-                self.fg_lpips_metric.update(rendered["img"], img, fg_valid_mask)
-                self.bg_psnr_metric.update(rendered["img"], img, bg_valid_mask)
-                self.bg_ssim_metric.update(rendered["img"], img, bg_valid_mask)
-                self.bg_lpips_metric.update(rendered["img"], img, bg_valid_mask)
+              # (H, W).
+              covisible_mask = batch.get(
+                  "covisible_masks",
+                  torch.ones_like(fg_mask),
+              )
+              rendered = self.model.render(
+                  t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
+              )
+              #WITHOUT 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 1, 288, 512]) torch.Size([1, 288, 512])   
+              #WITH 0 orch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512]) torch.Size([1, 288, 512]) torch.Size([288, 512]) 
+              # print(rendered["img"].shape, valid_mask.shape, covisible_mask.shape, fg_mask.shape)
+              valid_mask *= covisible_mask
+              fg_valid_mask = fg_mask * valid_mask
+              bg_valid_mask = (1 - fg_mask) * valid_mask
+              main_valid_mask = valid_mask if self.has_bg else fg_valid_mask
+              fg_valid_mask = fg_valid_mask[batch_idx][None, ...]
+              bg_valid_mask = bg_valid_mask[batch_idx][None, ...]
 
-            # Dump results.
-            results_dir = osp.join(self.save_dir, "results", "rgb")
-            os.makedirs(results_dir, exist_ok=True)
-            iio.imwrite(
-                osp.join(results_dir, f"{frame_name}.png"),
-                (rendered["img"][0].cpu().numpy() * 255).astype(np.uint8),
-            )
+
+              self.mde_metric.update(
+                  img, w2c, K, depth, mask, glb_pc, img_wh
+              )
+              # torch.Size([101, 288, 512]) torch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512, 1])
+              #print(mask.shape, rendered["mask"].shape)
+              # torch.Size([288, 512]) torch.Size([1, 288, 512, 1])
+              
+
+              rd_mask = rendered['mask'].squeeze(0).squeeze(-1)
+
+              rd_mask = (rd_mask > 0.9).float()
+              print(batch["masks"][batch_idx].max(), batch["masks"][batch_idx].min(),
+                    rd_mask.max(), rd_mask.min())
+              self.iou_metric.update(
+                  rd_mask, mask
+              )
+              main_valid_mask = torch.ones_like(mask)[None, ...]
+
+              img=img[None, ...]
+              self.psnr_metric.update(rendered["img"], img, main_valid_mask)
+              self.ssim_metric.update(rendered["img"], img, main_valid_mask)
+              self.lpips_metric.update(rendered["img"], img, main_valid_mask)
+
+              if self.has_bg:
+                  self.fg_psnr_metric.update(rendered["img"], img, fg_valid_mask)
+                  self.fg_ssim_metric.update(rendered["img"], img, fg_valid_mask)
+                  self.fg_lpips_metric.update(rendered["img"], img, fg_valid_mask)
+                  self.bg_psnr_metric.update(rendered["img"], img, bg_valid_mask)
+                  self.bg_ssim_metric.update(rendered["img"], img, bg_valid_mask)
+                  self.bg_lpips_metric.update(rendered["img"], img, bg_valid_mask)
+
+              # Dump results.
+              results_dir = osp.join(self.save_dir, "results", "rgb")
+              os.makedirs(results_dir, exist_ok=True)
+              iio.imwrite(
+                  osp.join(results_dir, f"{frame_name}.png"),
+                  (rendered["img"][0].cpu().numpy() * 255).astype(np.uint8),
+              )
 
         return {
             "val/psnr": self.psnr_metric.compute(),
@@ -455,7 +469,8 @@ class Validator:
             "val/bg_psnr": self.bg_psnr_metric.compute(),
             "val/bg_ssim": self.bg_ssim_metric.compute(),
             "val/bg_lpips": self.bg_lpips_metric.compute(),
-            "val/mde": self.mde_metric.compute()
+            "val/mde": self.mde_metric.compute(),
+            "val/iou": self.iou_metric.compute()
         }
 
 

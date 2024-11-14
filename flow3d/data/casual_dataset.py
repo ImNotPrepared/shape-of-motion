@@ -67,6 +67,7 @@ class CustomDataConfig:
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
     video_name: str = ''
+    super_fast: bool = False
 
 
 
@@ -88,6 +89,7 @@ class CasualDataset(BaseDataset):
         num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
         video_name: str = '_bike',
+        super_fast: bool=False,
         **_,
     ):
         super().__init__()
@@ -127,7 +129,9 @@ class CasualDataset(BaseDataset):
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
 
-        frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))][-22:]
+        frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
+        if super_fast:
+          frame_names=frame_names[-22:]
         #print(frame_names)
         #print(self.video_name)
 
@@ -244,7 +248,6 @@ class CasualDataset(BaseDataset):
               )
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
-        print(self.frame_names)
         assert (
             len(frame_names) == len(w2cs) == len(Ks)
         ), f"{len(frame_names)}, {len(w2cs)}, {len(Ks)}"
@@ -390,9 +393,9 @@ class CasualDataset(BaseDataset):
         fg_mask_erode = cv2.erode(
             fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
         )
-        bg_mask_erode = bg_mask#cv2.erode(
-        #    bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
-        #)
+        bg_mask_erode = cv2.erode(
+            bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
         out_mask = np.zeros_like(fg_mask, dtype=np.float32)
         out_mask[bg_mask_erode > 0] = -1
         out_mask[fg_mask_erode > 0] = 1

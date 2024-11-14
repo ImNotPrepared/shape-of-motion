@@ -245,16 +245,32 @@ def main(cfgs: List[TrainConfig]):
     guru.info(f"Starting training from {trainer.global_step=}")
     
     epoch = trainer.global_step
-    for ind, validator in enumerate(validators):
-      val_logs = validator.validate()
-      metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
-      with open(f"{cfg.work_dir}/validation_metrics_cam{ind}.txt", "a") as f:  
-          f.write(f"Epoch {cfgs[0].num_epochs}\n")
-          f.write(metrics_str + "\n\n")
+    import collections
 
-    for iiidx, validator in enumerate(validators):
+    all_val_logs = collections.defaultdict(list)
+
+    # Iterate over validators and collect metrics
+    for ind, validator in enumerate(validators):
+        val_logs = validator.validate()
+        metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
+
+        # Append metrics to the list for calculating means
+        for key, value in val_logs.items():
+            all_val_logs[key].append(value)
+
+        # Write individual metrics to file
+        with open(f"{cfg.work_dir}/NEW_validation_metrics_cam{ind}.txt", "a") as f:
+            f.write(f"Epoch {cfgs[0].num_epochs}\n")
+            f.write(metrics_str + "\n\n")
+    mean_val_logs = {key: sum(values) / len(values) for key, values in all_val_logs.items()}
+    mean_metrics_str = "\n".join([f"{key}: {value}" for key, value in mean_val_logs.items()])
+
+    with open(f"{cfg.work_dir}/NEW_validation_metrics_mean.txt", "a") as f:
+        f.write(f"Epoch {cfgs[0].num_epochs}\n")
+        f.write(mean_metrics_str + "\n\n")
+    '''for iiidx, validator in enumerate(validators):
         validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
-        validator.save_train_videos_images(epoch)
+        validator.save_train_videos_images(epoch)'''
 
 
 

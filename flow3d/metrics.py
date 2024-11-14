@@ -111,6 +111,10 @@ class mPSNR(PeakSignalNoiseRatio):
             masks (torch.Tensor | None): (...,) optional binary masks where the
                 1-regions will be taken into account.
         """
+        # torch.Size([1, 288, 512, 3]) torch.Size([288, 512, 3]) torch.Size([288, 512, 3])
+
+        ### correct one: torch.Size([1, 288, 512, 3]) torch.Size([101, 288, 512, 3]) torch.Size([101, 288, 512])
+        print(preds.shape, targets.shape, masks.shape)
         if masks is None:
             masks = torch.ones_like(preds[..., 0])
         self.sum_squared_error.append(
@@ -215,33 +219,35 @@ def save_depth_map(depth_map, filename):
     plt.savefig(filename)
     plt.close()
 
-def batch_mask_iou(masks1, masks2):
+def mask_iou(mask1, mask2):
     """
-    Computes the IoU for batches of masks.
+    Computes the Intersection over Union (IoU) of two binary masks using PyTorch tensors.
 
     Parameters:
-    - masks1: torch.Tensor of shape (N, H, W), batch of binary masks
-    - masks2: torch.Tensor of shape (N, H, W), batch of binary masks
+    - mask1: torch.Tensor of shape (H, W), binary mask
+    - mask2: torch.Tensor of shape (H, W), binary mask
 
     Returns:
-    - IoUs: torch.Tensor of shape (N,), IoU values for each pair in the batch
+    - IoU: torch.Tensor, Intersection over Union value between 0 and 1
     """
     # Ensure masks are boolean tensors
-    masks1 = masks1.bool()
-    masks2 = masks2.bool()
+    mask1 = mask1.bool()
+    mask2 = mask2.bool()
 
     # Compute intersection and union
-    intersection = torch.logical_and(masks1, masks2)
-    union = torch.logical_or(masks1, masks2)
+    intersection = torch.logical_and(mask1, mask2)
+    union = torch.logical_or(mask1, mask2)
 
-    # Sum over the pixels for each mask in the batch
-    intersection_sum = intersection.view(intersection.size(0), -1).sum(dim=1).float()
-    union_sum = union.view(union.size(0), -1).sum(dim=1).float()
-
-    # Handle cases where union_sum is zero
-    ious = torch.where(union_sum == 0, torch.ones_like(union_sum), intersection_sum / union_sum)
-
-    return ious
+    # Sum over the pixels
+    intersection_sum = torch.sum(intersection).float()
+    union_sum = torch.sum(union).float()
+    print('iou', intersection_sum, union_sum, intersection_sum / union_sum)
+    if union_sum == 0:
+        # Both masks are empty; define IoU as 1
+        return torch.tensor(1.0)
+    else:
+        iou = intersection_sum / union_sum
+        return iou
 
     
 
@@ -317,10 +323,11 @@ class mIOU(StructuralSimilarityIndexMeasure):
         if masks is None:
             masks = torch.ones_like(pred_mask[..., 0])
 
-        self.similarity.append(batch_mask_iou(pred_mask, target_mask))
+        self.similarity.append(mask_iou(pred_mask, target_mask))
 
     def compute(self) -> torch.Tensor:
         """Compute final SSIM metric."""
+        print(self.similarity)
         return torch.tensor(self.similarity).mean()
     
 

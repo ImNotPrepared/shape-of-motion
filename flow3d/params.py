@@ -156,8 +156,8 @@ class MotionBases(nn.Module):
         """
         transls = self.params["transls"][:, ts]  # (K, B, 3)
         rots = self.params["rots"][:, ts]  # (K, B, 6)
-        transls = torch.einsum("pk,kni->pni", coefs, transls)
-        rots = torch.einsum("pk,kni->pni", coefs, rots)  # (G, B, 6)
+        transls = torch.einsum("pk,kni->pni", coefs.float(), transls.float())
+        rots = torch.einsum("pk,kni->pni", coefs.float(), rots.float())  # (G, B, 6)
         rotmats = cont_6d_to_rmat(rots)  # (K, B, 3, 3)
         return torch.cat([rotmats, transls[..., None]], dim=-1)
 

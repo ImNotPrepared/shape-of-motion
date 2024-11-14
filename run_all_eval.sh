@@ -4,7 +4,7 @@
 dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/results_dance"
 
 # Loop over each folder that starts with "1_"
-for folder in "$dir"/1_*; do
+for folder in "$dir"/*; do
     # Get the base name of the folder
     exp=$(basename "$folder")
     # Run the python command with the folder name as the --exp argument
