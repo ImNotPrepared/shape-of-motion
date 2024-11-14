@@ -116,7 +116,7 @@ class CasualDataset(BaseDataset):
         self.hard_indx_dict = {
           '_bike': [49, 349, 3], 
           '_dance': [1477, 1778, 3],
-          '': [183, 294, 1],
+          '': [273, 294, 1],
         }
         self.glb_first_indx =  self.hard_indx_dict[self.video_name][0]
         self.glb_last_indx = self.hard_indx_dict[self.video_name][1]
@@ -127,7 +127,7 @@ class CasualDataset(BaseDataset):
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
 
-        frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
+        frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))][-22:]
         #print(frame_names)
         #print(self.video_name)
 
@@ -504,6 +504,7 @@ class CasualDataset(BaseDataset):
     
     def load_vanila_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
+        print(path)
         disp = np.load(path)
         depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
         depth = torch.from_numpy(depth).float()

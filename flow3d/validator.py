@@ -19,13 +19,125 @@ from tqdm import tqdm
 
 from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.data.utils import normalize_coords, to_device
-from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
+from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM, mMDE, mIOU
 from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import (
     apply_depth_colormap,
     make_video_divisble,
     plot_correspondences,
 )
+
+import torch
+from PIL import Image
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# ... [Your existing code for loading data and computing estimated_depth]
+
+# After computing estimated_depth, add the following function and code:
+
+import torch
+import os
+
+import torch
+import os
+
+import torch
+import os
+
+def unproject_image(img, w2c, K, depth, mask, glb_pc, img_wh, output_dir='output_depth_maps', output_filename='estimated_depth.png'):
+    device = img.device
+    w2c = w2c.to(device)
+    K = K.to(device)
+    depth = depth.to(device)
+    mask = mask.to(device)
+    pc = torch.from_numpy(glb_pc).float().to(device)  # (N, 3)
+    ones = torch.ones((pc.shape[0], 1), device=device, dtype=pc.dtype)
+    print(w2c.shape, K.shape)
+    pc_hom = torch.cat([pc, ones], dim=1)  # (N, 4)
+    c_pc_hom = pc_hom @ w2c.T  # (N, 4)
+    c_pc = c_pc_hom[:, :3]  # (N, 3)
+    print(pc_hom.shape)
+    x, y, z = c_pc[:, 0], c_pc[:, 1], c_pc[:, 2]  # (N,)
+
+    valid = z > 0
+    x, y, z = x[valid], y[valid], z[valid]
+
+    # Stack coordinates for matrix multiplication
+    coords = torch.stack([x, y, z], dim=0)  # (3, N_valid)
+    uv = K @ coords
+    u = uv[0, :] / uv[2, :]
+    v = uv[1, :] / uv[2, :]
+
+    # Round to nearest pixel indices
+    u_pixel = torch.round(u).long()
+    v_pixel = torch.round(v).long()
+
+    # Unpack image dimensions
+    W, H = img_wh
+
+    # Filter points within image bounds
+    in_bounds = (u_pixel >= 0) & (u_pixel < W) & (v_pixel >= 0) & (v_pixel < H)
+    u_pixel = u_pixel[in_bounds]
+    v_pixel = v_pixel[in_bounds]
+    z = z[in_bounds]
+
+    # Compute linear pixel indices
+    pixel_indices = v_pixel * W + u_pixel  # (N_in_bounds,)
+
+    # Initialize estimated depth map
+    estimated_depth_flat = torch.full((H * W,), float('inf'), device=device, dtype=pc.dtype)
+
+    # Manually assign depth values to the estimated depth map
+    # Sort pixel_indices and corresponding z values
+    sorted_indices = torch.argsort(pixel_indices)
+    sorted_pixel_indices = pixel_indices[sorted_indices]
+    sorted_z = z[sorted_indices]
+
+    # Find the indices where pixel_indices change
+    change_indices = torch.cat([
+        torch.tensor([0], device=sorted_pixel_indices.device),
+        (sorted_pixel_indices[1:] != sorted_pixel_indices[:-1]).nonzero(as_tuple=True)[0] + 1,
+        torch.tensor([len(sorted_pixel_indices)], device=sorted_pixel_indices.device)
+    ])
+
+    # Loop over unique pixel indices to assign the minimum depth value
+    for i in range(len(change_indices) - 1):
+        start = change_indices[i].item()
+        end = change_indices[i + 1].item()
+        idx = sorted_pixel_indices[start].item()
+        min_z = sorted_z[start:end].min()
+        estimated_depth_flat[idx] = min_z
+
+    # Reshape to (H, W)
+    estimated_depth = estimated_depth_flat.view(H, W)
+
+    gt_depth = depth
+    valid_mask = (estimated_depth != float('inf')) & (gt_depth > 0)# & mask.bool()
+
+    # Extract valid depth values
+    est_depth_valid = estimated_depth[valid_mask]
+    gt_depth_valid = gt_depth[valid_mask]
+
+    # Calculate Absolute Relative Error
+    abs_rel_error = torch.mean(torch.abs(gt_depth_valid - est_depth_valid) / gt_depth_valid)
+    print(f"Absolute Relative Error: {abs_rel_error.item()}")
+
+    # Save the depth map
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, output_filename)
+    save_depth_map(estimated_depth, output_path)
+
+    return abs_rel_error, estimated_depth
+
+def save_depth_map(depth_map, filename):
+    import matplotlib.pyplot as plt
+    plt.imshow(depth_map.cpu(), cmap='plasma', vmin=0, vmax=depth_map[depth_map != float('inf')].max())
+    plt.colorbar()
+    plt.savefig(filename)
+    plt.close()
+
 
 
 class Validator:
@@ -45,7 +157,12 @@ class Validator:
         self.val_kpt_loader = val_kpt_loader
         self.save_dir = save_dir
         self.has_bg = self.model.has_bg
-        
+        #if 'dance' in save_dir:
+        path = '/data3/zihanwa3/Capstone-DSR/Processing_dance/3D/points.npy'
+        #else:
+        #  path = '/data3/zihanwa3/Capstone-DSR/Processing/3D/points.npy'
+            
+        self.glb_pc = np.load(path)
 
         # metrics
         self.ssim = SSIM(data_range=1.0, size_average=True, channel=3)
@@ -60,6 +177,9 @@ class Validator:
         self.bg_lpips_metric = mLPIPS().to(device)
         self.pck_metric = PCK()
 
+        self.mde_metric = mMDE()
+        self.iou_metric = mIOU()
+
     def reset_metrics(self):
         self.psnr_metric.reset()
         self.ssim_metric.reset()
@@ -71,6 +191,9 @@ class Validator:
         self.bg_ssim_metric.reset()
         self.bg_lpips_metric.reset()
         self.pck_metric.reset()
+
+        self.mde_metric.reset()
+        self.iou_metric.reset()
 
     @torch.no_grad()
     def validate(self):
@@ -209,7 +332,7 @@ class Validator:
                 osp.join(results_dir, f"{frame_name}.png"),
                 (rendered["img"][0].cpu().numpy() * 255).astype(np.uint8),
             )
-
+        
         return {
             "val/psnr": self.psnr_metric.compute(),
             "val/ssim": self.ssim_metric.compute(),
@@ -233,27 +356,39 @@ class Validator:
         for batch_idx, batch in enumerate(
             tqdm(self.val_img_loader, desc="Rendering video", leave=False)
         ):
-                        
+            print(batch_idx,  batch["w2cs"].shape)            
             batch = {
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
             # ().
-            t = batch["ts"][0]
+            t = batch["ts"][batch_idx]
             # (4, 4).
-            w2c = batch["w2cs"][0]
+            w2c = batch["w2cs"][batch_idx]
             # (3, 3).
-            K = batch["Ks"][0]
+            K = batch["Ks"][batch_idx]
             # (H, W, 3).
-            img = batch["imgs"]
+            img = batch["imgs"][batch_idx]
             # (H, W).
-            depth = batch["depths"]
+            depth = batch["depths"][batch_idx]
 
-            mask = batch["masks"]
+            mask = batch["masks"][batch_idx]
 
-            img_wh = img[0].shape[-2::-1]
+            img_wh = img.shape[-2::-1]
+
+            glb_pc = self.glb_pc
 
 
+            '''# Assuming you have all the required inputs defined:
+            abs_rel_error, estimated_depth = unproject_image(
+                img, w2c, K, depth, mask, self.glb_pc, img_wh
+            )'''
+            #ratio = torch.max(gt_depth_valid / est_depth_valid, est_depth_valid / gt_depth_valid)
+            #delta = ratio < 1.25
+            #delta1 = torch.mean(delta.float())
+
+
+            #self.glb_pc = 
             frame_name = batch["frame_names"][0]
 
             valid_mask = batch.get(
@@ -278,6 +413,18 @@ class Validator:
             bg_valid_mask = (1 - fg_mask) * valid_mask
             main_valid_mask = valid_mask if self.has_bg else fg_valid_mask
 
+            self.mde_metric.update(
+                img, w2c, K, depth, mask, glb_pc, img_wh
+            )
+            # torch.Size([101, 288, 512]) torch.Size([1, 288, 512, 3]) torch.Size([1, 288, 512, 1])
+            #print(mask.shape, rendered["mask"].shape)
+            # torch.Size([288, 512]) torch.Size([1, 288, 512, 1])
+            print(rendered["img"].shape, img.shape)
+            self.iou_metric.update(
+                rendered['mask'].squeeze(0).squeeze(-1), mask
+            )
+            main_valid_mask = torch.ones_like(img[None, ...])
+            img = img[None, ...]
             self.psnr_metric.update(rendered["img"], img, main_valid_mask)
             self.ssim_metric.update(rendered["img"], img, main_valid_mask)
             self.lpips_metric.update(rendered["img"], img, main_valid_mask)
@@ -308,6 +455,7 @@ class Validator:
             "val/bg_psnr": self.bg_psnr_metric.compute(),
             "val/bg_ssim": self.bg_ssim_metric.compute(),
             "val/bg_lpips": self.bg_lpips_metric.compute(),
+            "val/mde": self.mde_metric.compute()
         }
 
 
@@ -733,18 +881,20 @@ class Validator:
             fps=fps,
         )
 
-
     @torch.no_grad()
     def save_int_videos(self, epoch: int, w2c):
         if self.train_loader is None:
             return
-        video_dir = osp.join(self.save_dir, "int_videos")
-        os.makedirs(video_dir, exist_ok=True)
-
+        # Directories for videos
         video_dir = osp.join(self.save_dir, "int_videos", f"epoch_{epoch:04d}")
         os.makedirs(video_dir, exist_ok=True)
 
-        print(video_dir, 'saving dict toooooo')
+        # Directories for images
+        image_dir = osp.join(self.save_dir, "int_images", f"epoch_{epoch:04d}")
+        os.makedirs(image_dir, exist_ok=True)
+
+        print(f"Saving videos to {video_dir} and images to {image_dir}")
+
         fps = 15.0
         # Render video.
         video = []
@@ -770,13 +920,40 @@ class Validator:
             rendered = self.model.render(
                 t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
             )
-            video.append(torch.cat([img, rendered["img"][0]], dim=1).cpu())
+            combined_img = torch.cat([img, rendered["img"][0]], dim=1).cpu()
+            video.append(combined_img)
             ref_pred_depth = rendered["depth"][0].cpu()
             ref_pred_depths.append(ref_pred_depth)
             depth_min = min(depth_min, ref_pred_depth.min().item())
             depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
             if rendered["mask"] is not None:
                 masks.append(rendered["mask"][0].cpu().squeeze(-1))
+
+            # Save individual images
+            image_path = osp.join(image_dir, f"frame_{batch_idx:04d}.png")
+            iio.imwrite(
+                image_path,
+                (combined_img.numpy() * 255).astype(np.uint8)
+            )
+
+            # Save depth images
+            depth_colormap = apply_depth_colormap(
+                ref_pred_depth, near_plane=depth_min, far_plane=depth_max
+            )
+            depth_image_path = osp.join(image_dir, f"depth_{batch_idx:04d}.png")
+            iio.imwrite(
+                depth_image_path,
+                (depth_colormap.numpy() * 255).astype(np.uint8)
+            )
+
+            # Save mask images if available
+            if len(masks) > 0:
+                mask_image = masks[-1]
+                mask_image_path = osp.join(image_dir, f"mask_{batch_idx:04d}.png")
+                iio.imwrite(
+                    mask_image_path,
+                    (mask_image.numpy() * 255).astype(np.uint8)
+                )
 
         video = torch.stack(video, dim=0)
         iio.mimwrite(

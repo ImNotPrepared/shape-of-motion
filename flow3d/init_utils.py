@@ -153,29 +153,37 @@ def init_bg(
     ).roll(1, dims=-1)
     bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
 
-    if seq_name == 'dance':
-      path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
-    else:
-      path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
+    init_w_pc = 2
+    if init_w_pc:
+      if seq_name == 'dance':
+        path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
+      elif init_w_pc ==2:
+        path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz'
+        #path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
 
-    
-    new_pt_cld = np.load(path)["data"]
-    params =  initialize_new_params(new_pt_cld)
-    bg_means = params['means3D']
-    bg_quats = params['unnorm_rotations']
-    bkdg_scales = params['log_scales']
-    bkdg_colors = params['rgb_colors']
-    bg_opacities = params['logit_opacities']
-    bg_scene_center = bg_means.mean(0)
-    bkdg_feats=torch.ones(bg_means.shape[0], 32)
+      
+        new_pt_cld = np.load(path)["data"]
+        params =  initialize_new_params(new_pt_cld)
+        bg_means = params['means3D']
+        bg_quats = params['unnorm_rotations']
+        bkdg_scales = params['log_scales']
+        bkdg_colors = params['rgb_colors']
+        bg_opacities = params['logit_opacities']
+        bg_scene_center = bg_means.mean(0)
+        bkdg_feats=torch.ones(bg_means.shape[0], 32)
 
-    print(f"Shape of bg_means: {bg_means.shape}")
-    print(f"Shape of bg_quats: {bg_quats.shape}")
-    print(f"Shape of bkdg_scales: {bkdg_scales.shape}")
-    print(f"Shape of bkdg_colors: {bkdg_colors.shape}")
-    print(f"Shape of bg_opacities: {bg_opacities.shape}")
-    print(f"Shape of bg_scene_center: {bg_scene_center.shape}")
-    print(f"Shape of bkdg_feats: {bkdg_feats.shape}")
+      elif init_w_pc ==3:
+        ckpt_path=f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/old_output/4.9M/cmu_bike/params_iter_3000.npz'
+        params = dict(np.load(ckpt_path, allow_pickle=True))
+        params = {k: torch.tensor(params[k]).cuda().float().requires_grad_(True) for k in params.keys()}
+        bg_means = params['means3D']#[0]
+        bg_quats = params['unnorm_rotations']#[0]
+        bkdg_scales = params['log_scales']
+        bkdg_colors = params['rgb_colors'] #* 255#[0]
+        bg_opacities = params['logit_opacities'][:, 0]
+        bg_scene_center = bg_means.mean(0)
+        bkdg_feats=torch.ones(bg_means.shape[0], 32)
+
 
     gaussians = GaussianParams(
         bg_means,
@@ -252,6 +260,10 @@ def init_fg_motion_bases_from_single_t(
     cano_t: int,
     cluster_init_method: str = "kmeans",
     min_mean_weight: float = 0.1,
+    get_data: tuple | None = None,
+    org_path: str = None, 
+    fg_depth_path: str = None, 
+
 ):
     
     ### xyz
@@ -260,10 +272,8 @@ def init_fg_motion_bases_from_single_t(
 
     num_frames = tracks_3d.xyz.shape[1]
     device = 'cuda'
-    org_path=f'/data3/zihanwa3/Capstone-DSR/Processing{video_name}/dinov2features/resized_512_Aligned_fg_only/'
-    fg_depth_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/'
-    from flow3d.org_utils import get_preset_data, get_preset_dance
-    pose_matrices, intrinsics_matrices = get_preset_dance(512)
+
+    pose_matrices, intrinsics_matrices = get_data 
     #fg_pc = np.load(f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/{cano_t}/fg_pc.npz')
     all_fg_pc_feats = []  # List to collect features from all cameras
     all_fg_pc_xyz = []    # List to collect 3D point coordinates from all cameras
@@ -321,7 +331,7 @@ def init_fg_motion_bases_from_single_t(
     ids, counts = labels.unique(return_counts=True)
     ids = ids[counts > 50] ### 100
     sampled_centers = sampled_centers[:, ids]
-
+    means_cano = torch.tensor(means_cano)
     # compute basis weights from the distance to the cluster centers
     dists2centers = torch.norm(means_cano[:, None] - sampled_centers, dim=-1)
     motion_coefs = 10 * torch.exp(-dists2centers)
@@ -348,6 +358,8 @@ def init_fg_motion_bases_from_single_t(
     scales = params['log_scales']
     colors = params['rgb_colors']
     opacities = params['logit_opacities']
+
+    feats = torch.from_numpy(feats).cuda()
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
     return bases, motion_coefs, gaussians#, sampled_centers
@@ -822,7 +834,8 @@ def sample_initial_bases_centers(
     xyz = cp.asarray(tracks_3d.xyz)
     print(f"{xyz.shape=}") # [N, T, 3]
 
-    clustering_method = 'feat'
+    # clustering_method = 'feat'
+    clustering_method = None
 
     # num_bases
     if clustering_method == 'feat':

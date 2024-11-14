@@ -7,6 +7,7 @@ from nerfview import CameraState
 from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import draw_tracks_2d_th, get_server
 from flow3d.vis.viewer import DynamicViewer
+from flow3d.params import GaussianParams
 import pickle
 
 class Renderer:
@@ -101,7 +102,34 @@ class Renderer:
         state_dict = ckpt["model"]
         model = SceneModel.init_from_state_dict(state_dict)
         model = model.to(device)
+
+        # print('CAUSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS_DOTHETRICKS')
+        #do_my_trick=True
+        #if do_my_trick:
+        #   model.bg.params['scales'] = 0.77 * model.bg.params['scales']
+        '''
+        def get_scales(self) -> torch.Tensor:
+          return self.scale_activation(self.params["scales"])
+        
+        '''
+        '''ckpt_path=f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/old_output/4.9M/cmu_bike/params_iter_5000.npz'
+        params = dict(np.load(ckpt_path, allow_pickle=True))
+
+        for k, v in model.bg.params.items():
+           print(k, v.max())
+        params = {k: torch.tensor(params[k]).cuda().float().requires_grad_(True) for k in params.keys()}
+        means = params['means3D']#[0]
+        quats = params['unnorm_rotations']#[0]
+        scales = params['log_scales']
+        colors = params['rgb_colors'] * 10#* 255#[0]
+        opacities = params['logit_opacities'][:, 0]
+
+        model.bg = GaussianParams(means, quats, scales, colors, opacities)
+        for k, v in model.bg.params.items():
+           print(k, v.max())'''
         renderer = Renderer(model, device, *args, **kwargs)
+
+           
         renderer.global_step = 7000
         renderer.epoch = 499
         print(renderer.global_step, renderer.epoch, 'renderfig')
@@ -141,10 +169,22 @@ class Renderer:
         #try:  
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
-        self.seq_name='bike_dusmon'
+
+
+
+
+        self.seq_name='single_person'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
+
+        elif self.seq_name == 'single_person':
+          #t = t * 3 /data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike
+          pc_dir=f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz"
+          pc = np.load(pc_dir)["data"]
+
+        
+
         elif self.seq_name == 'moving_cam':
           #t = t * 3
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/BIKE_no_preset/{t}/conf_pc.npz'
