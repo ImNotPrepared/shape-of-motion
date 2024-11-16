@@ -231,8 +231,8 @@ def mask_iou(mask1, mask2):
     - IoU: torch.Tensor, Intersection over Union value between 0 and 1
     """
     # Ensure masks are boolean tensors
-    mask1 = mask1.bool()
-    mask2 = mask2.bool()
+    mask1 = (mask1 > 0.9).bool()
+    mask2 = (mask2 > 0.9).bool()
 
     # Compute intersection and union
     intersection = torch.logical_and(mask1, mask2)

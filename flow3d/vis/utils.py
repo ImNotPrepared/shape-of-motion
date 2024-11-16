@@ -234,9 +234,9 @@ def pixel_to_verts_clip(pixels, img_wh, z: float | torch.Tensor = 0.0, w=1.0):
 def draw_tracks_2d_th(
     img: torch.Tensor,
     tracks_2d: torch.Tensor,
-    track_point_size: int = 5,
-    track_point_segments: int = 16,
-    track_line_width: int = 2,
+    track_point_size: int = 7,
+    track_point_segments: int = 35,
+    track_line_width: int = 7,
     cmap_name: str = "gist_rainbow",
 ):
     cmap = colormaps.get_cmap(cmap_name)

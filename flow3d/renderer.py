@@ -104,9 +104,9 @@ class Renderer:
         model = model.to(device)
 
         # print('CAUSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS_DOTHETRICKS')
-        #do_my_trick=True
-        #if do_my_trick:
-        #   model.bg.params['scales'] = 0.77 * model.bg.params['scales']
+        do_my_trick=True
+        if do_my_trick:
+           model.bg.params['scales'] = 0.83 * model.bg.params['scales']
         '''
         def get_scales(self) -> torch.Tensor:
           return self.scale_activation(self.params["scales"])
@@ -180,8 +180,15 @@ class Renderer:
 
         elif self.seq_name == 'single_person':
           #t = t * 3 /data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike
-          pc_dir=f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz"
-          pc = np.load(pc_dir)["data"]
+          path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz'
+          #path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
+          new_pt_cld = np.load(path)["data"]
+          path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300/118/bg_pc.npz'
+          new_pt_cld_ = np.load(path)["data"]
+
+          print(new_pt_cld.shape, new_pt_cld_.shape)
+          pc = np.concatenate((new_pt_cld, new_pt_cld_), axis=0)
+
 
         
 

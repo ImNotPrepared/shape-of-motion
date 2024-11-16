@@ -166,6 +166,7 @@ def init_bg(
 
         print(new_pt_cld.shape, new_pt_cld_.shape)
         new_pt_cld = np.concatenate((new_pt_cld, new_pt_cld_), axis=0)
+        print(new_pt_cld.shape, new_pt_cld_.shape)
 
 
         params =  initialize_new_params(new_pt_cld)

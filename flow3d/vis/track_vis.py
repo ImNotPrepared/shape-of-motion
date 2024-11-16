@@ -11,7 +11,7 @@
       Ks: np.ndarray,
       w2cs: np.ndarray,
       occs=None,
-      radius: int = 3,
+      radius: int = 7,
   ):
       num_tracks = tracks_3d.shape[0]
       labels = np.linspace(0, 1, num_tracks)

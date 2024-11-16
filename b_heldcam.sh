@@ -12,15 +12,15 @@ combinations=(
 # Array of individual device IDs
 id_devices=(
   0
-  5
+  2
   6
-  7
+  1
 )
 
 # Run the training scripts in parallel with each combination
 tasks=()
 for i in {0..3}; do
-  CUDA_VISIBLE_DEVICES=${id_devices[i]} python dance_glb.py --seq_name 'bike_test' --train_indices ${combinations[i]} --exp "$EXP" &
+  CUDA_VISIBLE_DEVICES=${id_devices[i]} python dance_glb.py --depth_type monst3r+dust3r --seq_name 'bike_test' --train_indices ${combinations[i]} --exp "$EXP" &
   tasks+=("$!")
 done
 

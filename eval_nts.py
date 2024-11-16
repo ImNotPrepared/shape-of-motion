@@ -227,52 +227,47 @@ def main(cfgs: List[TrainConfig]):
     import json
     md = json.load(open(cfg.test_w2cs, 'r'))
     c2ws = []
-    for c in range(1, 6):
-      if c==5:
-          c=1
-      k, w2c =  md['k'][0][c], np.linalg.inv(md['w2c'][0][c])
-      c2ws.append(w2c)
-
-
-    all_interpolated_c2ws = []
-    for i in range(len(c2ws) - 1):
-        c2w1 = c2ws[i]
-        c2w2 = c2ws[i + 1]
-        interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
-        all_interpolated_c2ws.extend(interpolated)
+    for c in range(1, 5):
+        k, w2c = md['k'][0][c], md['w2c'][0][c]
+        c2w = np.linalg.inv(w2c)
+        
+        # Generate small random rotation angles (in degrees) between -5 and 5
+        angles_deg = np.random.uniform(-5, 5, size=3)
+        angles_rad = np.deg2rad(angles_deg)
+        
+        # Create rotation matrix from Euler angles
+        rotation_matrix = R.from_euler('xyz', angles_rad).as_matrix()
+        
+        # Convert rotation matrix to 4x4 homogeneous transformation matrix
+        rotation_homogeneous = np.eye(4)
+        rotation_homogeneous[:3, :3] = rotation_matrix
+        
+        # Apply the rotation to the c2w matrix
+        new_c2w = rotation_homogeneous @ c2w
+        
+        c2ws.append(new_c2w)
 
 
     guru.info(f"Starting training from {trainer.global_step=}")
     
     epoch = trainer.global_step
+
     import collections
 
     all_val_logs = collections.defaultdict(list)
 
-    # Iterate over validators and collect metrics
     for ind, validator in enumerate(validators):
-        val_logs = validator.validate()
+        val_logs = validator.validate_NTS()
         metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
 
-        # Append metrics to the list for calculating means
         for key, value in val_logs.items():
             all_val_logs[key].append(value)
 
         # Write individual metrics to file
-        with open(f"{cfg.work_dir}/NEW_validation_metrics_cam{ind}.txt", "a") as f:
+        with open(f"{cfg.work_dir}/NTS_validation_metrics_cam{ind}.txt", "a") as f:
             f.write(f"Epoch {cfgs[0].num_epochs}\n")
             f.write(metrics_str + "\n\n")
-            
-    mean_val_logs = {key: sum(values) / len(values) for key, values in all_val_logs.items()}
-    mean_metrics_str = "\n".join([f"{key}: {value}" for key, value in mean_val_logs.items()])
-
-    with open(f"{cfg.work_dir}/NEW_validation_metrics_mean.txt", "a") as f:
-        f.write(f"Epoch {cfgs[0].num_epochs}\n")
-        f.write(mean_metrics_str + "\n\n")
-    for iiidx, validator in enumerate(validators):
-        validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
-        validator.save_train_videos_images(epoch)
-
+        validator.save_nts_images(epoch)
 
 
 def initialize_and_checkpoint_model(
@@ -379,6 +374,7 @@ if __name__ == "__main__":
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                   video_name=data_dict_1,
                   depth_type=depth_type,
+                  super_fast=True
               ),
               # Pass the unknown arguments to tyro.cli
               lr=tyro.cli(SceneLRConfig, args=remaining_args),
@@ -386,7 +382,7 @@ if __name__ == "__main__":
               optim=tyro.cli(OptimizerConfig, args=remaining_args),
               train_indices=train_indices,
               test_w2cs=f'/data3/zihanwa3/Capstone-DSR/Processing{data_dict_1}/scripts/Dy_train_meta.json',
-              seq_name=seq_name
+              seq_name=seq_name,
           )
           for i in range(4)
       ]     
