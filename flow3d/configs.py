@@ -7,7 +7,7 @@ class FGLRConfig:
     opacities: float = 1e-2
     scales: float = 5e-3
     quats: float = 1e-3
-    colors: float = 1e-2
+    colors: float = 0
     feats: float = 1e-3
     motion_coefs: float = 1e-3
 
@@ -38,11 +38,11 @@ class SceneLRConfig:
 class LossesConfig:
     w_rgb: float = 7.0
     w_feat: float = 7.0 #0.01
-    w_depth_reg: float = 20
+    w_depth_reg: float = 1.0
     w_depth_const: float = 0.0
     w_depth_grad: float = 0.0
-    w_track: float = 0.0
-    w_mask: float = 9.0
+    w_track: float = 2.0
+    w_mask: float = 5.0
     w_smooth_bases: float = 0.1
     w_smooth_tracks: float = 2.0
     w_scale_var: float = 0.01

@@ -154,7 +154,7 @@ def init_bg(
     bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
 
     init_w_pc = 2
-    if init_w_pc:
+    '''if init_w_pc:
       if seq_name == 'dance':
         path = '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
       elif init_w_pc ==2:
@@ -188,7 +188,7 @@ def init_bg(
         bkdg_colors = params['rgb_colors'] #* 255#[0]
         bg_opacities = params['logit_opacities'][:, 0]
         bg_scene_center = bg_means.mean(0)
-        bkdg_feats=torch.ones(bg_means.shape[0], 32)
+        bkdg_feats=torch.ones(bg_means.shape[0], 32)'''
 
 
     gaussians = GaussianParams(

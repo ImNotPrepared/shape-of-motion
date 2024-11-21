@@ -498,7 +498,7 @@ class Trainer:
         )
 
         loss += depth_loss * self.losses_cfg.w_depth_reg
-
+        print(loss)
         # mapped depth loss (using cached depth with EMA)
         #  mapped_depth_loss = 0.0
         mapped_depth_gt = torch.cat([x.reshape(-1) for x in target_track_depths], dim=0)
@@ -509,7 +509,7 @@ class Trainer:
         )
 
         loss += mapped_depth_loss * self.losses_cfg.w_depth_const
-
+        print(loss)
         #  depth_gradient_loss = 0.0
         depth_gradient_loss = compute_gradient_loss(
             pred_disp,
@@ -519,7 +519,7 @@ class Trainer:
         )
 
         loss += depth_gradient_loss * self.losses_cfg.w_depth_grad
-
+        print(loss)
         # bases should be smooth.
         small_accel_loss = compute_se3_smoothness_loss(
             self.model.motion_bases.params["rots"],
@@ -561,11 +561,11 @@ class Trainer:
 
         # # sparsity loss
         # loss += 0.01 * self.opacity_activation(self.opacities).abs().mean()
-
+        print(loss)
         # Acceleration along ray direction should be small.
         z_accel_loss = compute_z_acc_loss(means_fg_nbs, w2cs)
         loss += self.losses_cfg.w_z_accel * z_accel_loss
-
+        print(loss)
         # Prepare stats for logging.
         try:
           stats = {
