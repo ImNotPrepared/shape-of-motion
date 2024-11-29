@@ -278,24 +278,6 @@ def initialize_and_checkpoint_model(
 if __name__ == "__main__":
     import wandb
     import argparse
-    upper_switch = {
-      'bike': [
-        'bike_undist_cam0',
-        '_bike'       
-      ],
-
-      'bike_test':[
-        'toy_512_',
-        ''       
-      ],
-
-      'dance': [
-        'undist_cam0',
-        '_dance'
-      ],
-
-
-    }
 
 
     parser = argparse.ArgumentParser(description="Wandb Training Script")
@@ -311,7 +293,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--depth_type", type=str, default="modest"
+        "--depth_type", type=str, default="monst3r+dust3r"
     )
 
     args, remaining_args = parser.parse_known_args()
@@ -320,9 +302,26 @@ if __name__ == "__main__":
     seq_name = args.seq_name
     depth_type = args.depth_type
 
-    data_dict_0, data_dict_1  = upper_switch[seq_name][0], upper_switch[seq_name][1]
-    work_dir = f'./results{data_dict_1}/{args.exp}/'
+    category = seq_name.split("_")[2]
+
+    
+    work_dir = f'./results{seq_name}/{args.exp}/'
     wandb.init(name=work_dir.split('/')[-1])
+    '''
+    def load_depth(self, index) -> torch.Tensor:
+    #  load_da2_depth load_duster_depth load_org_depth
+    if self.depth_type == 'modest':
+        depth = self.load_modest_depth(index)
+    elif self.depth_type == 'da2':
+        depth = self.load_da2_depth(index)
+    elif self.depth_type == 'dust3r':
+        depth = self.load_modest_depth(index)       
+    elif self.depth_type == 'monst3r':
+        depth = self.load_monster_depth(index)    
+    elif self.depth_type == 'monst3r+dust3r':
+        depth = self.load_duster_moncheck_depth(index) 
+    
+    '''
 
     def find_missing_number(nums):
         full_set = {0, 1, 2, 3}
@@ -339,9 +338,9 @@ if __name__ == "__main__":
           TrainConfig(
               work_dir=work_dir,
               data=CustomDataConfig(
-                  seq_name=f"{data_dict_0}{i+1}",
+                  seq_name=f"{category}_undist_cam0{i+1}",
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-                  video_name=data_dict_1,
+                  video_name=seq_name,
                   depth_type=depth_type,
               ),
               # Pass the unknown arguments to tyro.cli
@@ -349,7 +348,7 @@ if __name__ == "__main__":
               loss=tyro.cli(LossesConfig, args=remaining_args),
               optim=tyro.cli(OptimizerConfig, args=remaining_args),
               train_indices=train_indices,
-              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/Processing{data_dict_1}/scripts/Dy_train_meta.json',
+              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/raw_data/{seq_name[1:]}/trajectory/Dy_train_meta.json',
               seq_name=seq_name
           )
           for i in range(4)
@@ -359,20 +358,21 @@ if __name__ == "__main__":
           TrainBikeConfig(
               work_dir=work_dir,
               data=CustomDataConfig(
-                  seq_name=f"{data_dict_0}{i+1}",
+                  seq_name=f"{category}_undist_cam0{i+1}",
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
-                  video_name=data_dict_1,
+                  video_name=seq_name,
                   depth_type=depth_type,
-                  super_fast=True
+                  super_fast=False
               ),
               # Pass the unknown arguments to tyro.cli
               lr=tyro.cli(SceneLRConfig, args=remaining_args),
               loss=tyro.cli(LossesConfig, args=remaining_args),
               optim=tyro.cli(OptimizerConfig, args=remaining_args),
               train_indices=train_indices,
-              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/Processing{data_dict_1}/scripts/Dy_train_meta.json',
-              seq_name=seq_name,
+              test_w2cs=f'/data3/zihanwa3/Capstone-DSR/raw_data/{seq_name[1:]}/trajectory/Dy_train_meta.json',
+              seq_name=seq_name
           )
           for i in range(4)
       ]     
+      # /data3/zihanwa3/Capstone-DSR/raw_data/unc_basketball_03-16-23_01_18/trajectory/Dy_train_meta.json
     main(configs)

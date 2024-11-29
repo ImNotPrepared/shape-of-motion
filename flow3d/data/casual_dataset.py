@@ -25,6 +25,13 @@ from flow3d.data.utils import (
 )
 from flow3d.transforms import rt_to_mat4
 
+import os
+import numpy as np
+from torch.utils.data import Dataset
+import torch
+import torchvision.transforms as transforms
+from PIL import Image
+import torch.nn.functional as F
 import json 
 @dataclass
 class DavisDataConfig:
@@ -117,7 +124,6 @@ class CasualDataset(BaseDataset):
         path = f'/data3/zihanwa3/Capstone-DSR/Processing{video_name}/undist_cam01/*.jpg'
         paths = glob.glob(path)
         sorted_paths = sorted(paths, key=lambda x: int(os.path.basename(x).split('.')[0]))
-        print(path, sorted_paths)
         self.min_ = int(os.path.basename(sorted_paths[0]).split('.')[0])
         self.max_= int(os.path.basename(sorted_paths[-1]).split('.')[0])
 
@@ -466,13 +472,16 @@ class CasualDataset(BaseDataset):
         to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
         if self.video_name == '_dance':
           new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
-        else:#elif self.video_name == '':
+        elif self.video_name == '':
           new_path = f'/data3/zihanwa3/Capstone-DSR/monst3r/bike_aligned_preset_k/'
           path = path.replace('toy_512_', 'undist_cam')
-
+        else:
+          new_path = f"/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k_"
+          path = path.replace('toy_512_', 'undist_cam')
         # duster_depth_clean_dance_512_4_mons_cp
         path = path.replace(to_replace, new_path)
         path = path.replace('disp', 'frame')
+        path = path.replace('_undist_cam', '/undist_cam')
         depth_map = np.load(path)
         depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
         depth = torch.from_numpy(depth_map).float()
@@ -514,7 +523,8 @@ class CasualDataset(BaseDataset):
           # print(path.split('/')[-1][:-4], path.split('/')[-2])
           # 1477 undist_cam01
           # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_bike_100_bs1/173/conf_depth_0.npy
-          final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dumon_depth/' + path.split('/')[-1][:-4] + '/' + 'conf_depth_' + str(int(path.split('/')[-2][-1])-1) + '.npy'
+          depth_ttttype = 'conf_depth_' #'pc_depth_'
+          final_path = f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/dumon_depth/' + path.split('/')[-1][:-4] + '/' + depth_ttttype + str(int(path.split('/')[-2][-1])-1) + '.npy'
 
 
                   
@@ -553,11 +563,6 @@ class CasualDataset(BaseDataset):
           depth = torch.from_numpy(depth_map).float()
           input_tensor = depth.unsqueeze(0).unsqueeze(0) 
         except:
-          #/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/undist_cam01/1477.npz
-
-          # /data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_new_2.7/1478/1.npz
-          #final_path = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/' +  path.split('/')[-1][:-4] + '/' + path.split('/')[-2][-1] + '.npz'
-          # print(path.split('/')[-1][:-4], path.split('/')[-2][-1] + '.npz')
           final_path = f"/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_300_testonly/{os.path.splitext(os.path.basename(path))[0]}/pc_depth_{os.path.basename(os.path.dirname(path))[-1]}.npy"
 
           disp_map =  np.load(final_path)#['depth']          
@@ -571,264 +576,6 @@ class CasualDataset(BaseDataset):
         # If you want to remove the added dimensions
         depth = resized_tensor.squeeze(0).squeeze(0) 
         return depth
-
-    def load_da2_depth(self, index) -> torch.Tensor:
-        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
-        near, far = 1e-7, 7e1
-        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npz"
-        path = path.replace('/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//', f'/data3/zihanwa3/Capstone-DSR/Processing{self.video_name}/da_v2_disp/')
-        path = path.replace('toy_512_', '')
-        camera_index = int(self.depth_dir[-1]) -1 
-        absolute_index=index+60 ### now it is 123, 423
-        scale, shift = self.scales_shifts[absolute_index][camera_index]
-        disp_map =  np.load(path)['depth_map']
-        nonzero_mask = disp_map != 0
-        
-        disp_map[nonzero_mask] = disp_map[nonzero_mask]* scale + shift
-        valid_depth_mask = (disp_map > 0) & (disp_map <= far)
-        disp_map[~valid_depth_mask] = 0
-        depth_map = np.full(disp_map.shape, np.inf)
-        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
-        depth_map[depth_map == np.inf] = 0
-        depth_map = depth_map.astype(np.float32)
-        depth = torch.from_numpy(depth_map).float()
-        input_tensor = depth.unsqueeze(0).unsqueeze(0)  # Now size [1, 1, 288, 512]
-
-        # Define the target size
-        output_size = (288, 512)  # (height, width)
-
-        # Resize the tensor
-        resized_tensor = F.interpolate(input_tensor, size=output_size, mode='bilinear', align_corners=False)
-        depth = resized_tensor.squeeze(0).squeeze(0) 
-        return depth
-
-    def load_target_tracks(
-        self, query_index: int, target_indices: list[int], dim: int = 1
-    ):
-        """
-        tracks are 2d, occs and uncertainties
-        :param dim (int), default 1: dimension to stack the time axis
-        return (N, T, 4) if dim=1, (T, N, 4) if dim=0
-        """
-        q_name = self.frame_names[query_index]
-        all_tracks = []
-        for ti in target_indices:
-            t_name = self.frame_names[ti]
-            path = f"{self.tracks_dir}/{q_name}_{t_name}.npy"
-            tracks = np.load(path).astype(np.float32)
-            all_tracks.append(tracks)
-        return torch.from_numpy(np.stack(all_tracks, axis=dim))
-
-    def get_tracks_3d(
-        self, num_samples: int, start: int = 0, end: int = -1, step: int = 1, **kwargs
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        num_frames = self.num_frames
-        if end < 0:
-            end = num_frames + 1 + end
-        query_idcs = list(range(start, end, step))
-        target_idcs = list(range(start, end, step))
-
-        masks = torch.stack([self.get_mask(i) for i in target_idcs], dim=0)
-        fg_masks = (masks == 1).float()
-        depths = torch.stack([self.get_depth(i) for i in target_idcs], dim=0)
-        inv_Ks = torch.linalg.inv(self.Ks[target_idcs])
-        c2ws = torch.linalg.inv(self.w2cs[target_idcs])
-
-        num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
-        cur_num = 0
-        tracks_all_queries = []
-        for q_idx in query_idcs:
-            # (N, T, 4)
-            tracks_2d = self.load_target_tracks(q_idx, target_idcs)
-            num_sel = int(
-                min(num_per_query_frame, num_samples - cur_num, len(tracks_2d))
-            )
-            if num_sel < len(tracks_2d):
-                sel_idcs = np.random.choice(len(tracks_2d), num_sel, replace=False)
-                tracks_2d = tracks_2d[sel_idcs]
-            cur_num += tracks_2d.shape[0]
-            img = self.get_image(q_idx)
-            feat = self.get_feat(q_idx)
-
-
-            tidx = target_idcs.index(q_idx)
-
-
-            tracks_tuple = get_tracks_3d_for_query_frame(
-                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws, feat
-            )
-  
-            tracks_all_queries.append(tracks_tuple)
-
-
-        tracks_3d, colors, feats, visibles, invisibles, confidences = map(
-            partial(torch.cat, dim=0), zip(*tracks_all_queries)
-        )
-
-
-        return tracks_3d, visibles, invisibles, confidences, colors, feats
-
-
-    def get_set_bkgd_points(
-        self,
-        num_samples: int,
-        use_kf_tstamps: bool = False,
-        stride: int = 8,
-        down_rate: int = 8,
-        min_per_frame: int = 64,
-        **kwargs,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        start = 0
-        end = self.num_frames
-        H, W = self.get_image(0).shape[:2]
-        bg_geometry = []
-
-
-        points = (
-            torch.einsum(
-                "ij,pj->pi",
-                torch.linalg.inv(K),
-                F.pad(grid[bool_mask], (0, 1), value=1.0),
-            )
-            * depth[bool_mask][:, None]
-        )
-        points = torch.einsum(
-            "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
-        )
-        point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
-        point_colors = img[bool_mask]
-        point_feats = feat[bool_mask]
-
-        num_sel = max(len(points) // down_rate, min_per_frame)
-        sel_idcs = np.random.choice(len(points), num_sel, replace=False)
-        points = points[sel_idcs]
-        point_normals = point_normals[sel_idcs]
-        point_colors = point_colors[sel_idcs]
-        point_feats = point_feats[sel_idcs]
-        guru.debug(f"{query_idx=} {points.shape=}")
-        bg_geometry.append((points, point_normals, point_colors, point_feats))
-
-        bg_points, bg_normals, bg_colors, bg_feats = map(
-            partial(torch.cat, dim=0), zip(*bg_geometry)
-        )
-        if len(bg_points) > num_samples:
-            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
-            bg_points = bg_points[sel_idcs]
-            bg_normals = bg_normals[sel_idcs]
-            bg_colors = bg_colors[sel_idcs]
-            bg_feats = bg_feats[sel_idcs]
-
-        return bg_points, bg_normals, bg_colors, bg_feats
-    
-
-    def get_bkgd_points(
-        self,
-        num_samples: int,
-        use_kf_tstamps: bool = False,
-        stride: int = 8,
-        down_rate: int = 8,
-        min_per_frame: int = 64,
-        **kwargs,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        start = 0
-        end = self.num_frames
-        H, W = self.get_image(0).shape[:2]
-        grid = torch.stack(
-            torch.meshgrid(
-                torch.arange(0, W, dtype=torch.float32),
-                torch.arange(0, H, dtype=torch.float32),
-                indexing="xy",
-            ),
-            dim=-1,
-        )
-
-        ###  start 
-        #if use_kf_tstamps:
-        #    query_idcs = self.keyframe_idcs.tolist()
-        #else:
-        num_query_frames = self.num_frames // stride
-        query_endpts = torch.linspace(start, end, num_query_frames + 1)
-        query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
-
-        bg_geometry = []
-        print(f"{query_idcs=}")
-        for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
-            img = self.get_image(query_idx)
-            feat = self.get_feat(query_idx)
-            depth = self.get_depth(query_idx)
-            bg_mask = self.get_mask(query_idx) < 0
-            bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
-
-            w2c = self.w2cs[query_idx]
-            K = self.Ks[query_idx]
-
-            # get the bounding box of previous points that reproject into frame
-            # inefficient but works for now
-            bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
-            for p3d, _, _, _ in bg_geometry:
-                if len(p3d) < 1:
-                    continue
-                # reproject into current frame
-                p2d = torch.einsum(
-                    "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
-                )
-                p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
-                xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
-                ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
-
-                bmin_x = min(bmin_x, int(xmin))
-                bmin_y = min(bmin_y, int(ymin))
-                bmax_x = max(bmax_x, int(xmax))
-                bmax_y = max(bmax_y, int(ymax))
-
-            # don't include points that are covered by previous points
-            bmin_x = max(0, bmin_x)
-            bmin_y = max(0, bmin_y)
-            bmax_x = min(W, bmax_x)
-            bmax_y = min(H, bmax_y)
-            overlap_mask = torch.ones_like(bool_mask)
-            overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
-
-            bool_mask &= overlap_mask
-            if bool_mask.sum() < min_per_frame:
-                guru.debug(f"skipping {query_idx=}")
-                continue
-
-            points = (
-                torch.einsum(
-                    "ij,pj->pi",
-                    torch.linalg.inv(K),
-                    F.pad(grid[bool_mask], (0, 1), value=1.0),
-                )
-                * depth[bool_mask][:, None]
-            )
-            points = torch.einsum(
-                "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
-            )
-            point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
-            point_colors = img[bool_mask]
-            point_feats = feat[bool_mask]
-
-            num_sel = max(len(points) // down_rate, min_per_frame)
-            sel_idcs = np.random.choice(len(points), num_sel, replace=False)
-            points = points[sel_idcs]
-            point_normals = point_normals[sel_idcs]
-            point_colors = point_colors[sel_idcs]
-            point_feats = point_feats[sel_idcs]
-            guru.debug(f"{query_idx=} {points.shape=}")
-            bg_geometry.append((points, point_normals, point_colors, point_feats))
-
-        bg_points, bg_normals, bg_colors, bg_feats = map(
-            partial(torch.cat, dim=0), zip(*bg_geometry)
-        )
-        if len(bg_points) > num_samples:
-            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
-            bg_points = bg_points[sel_idcs]
-            bg_normals = bg_normals[sel_idcs]
-            bg_colors = bg_colors[sel_idcs]
-            bg_feats = bg_feats[sel_idcs]
-
-        return bg_points, bg_normals, bg_colors, bg_feats
 
     def __getitem__(self, index: int, target_inds=None):
         #index = np.random.randint(0, self.num_frames)
@@ -844,7 +591,7 @@ class CasualDataset(BaseDataset):
             # (H, W, 3).
             "imgs": self.get_image(index),
             "feats": self.get_feat(index),
-            "depths": self.get_depth(index),
+            #"depths": self.get_depth(index),
         }
         tri_mask = self.get_mask(index)
         valid_mask = tri_mask != 0  # not fg or bg
@@ -917,3 +664,489 @@ class CasualDatasetVideoView(Dataset):
             "depths": self.depths[index],
             "masks": self.masks[index],
         }
+
+class EgoDataset(Dataset):
+    def __init__(self, t, md, seq, mode='stat_only', clean_img=True, depth_loss=False, debug_mode='no'):
+        self.t = t + 1111
+        self.md = md
+        self.seq = seq
+        self.mode = mode
+        self.clean_img = clean_img
+        self.depth_loss = depth_loss
+        self.debug_mode = debug_mode
+
+        self.dino_mask = True
+        if self.dino_mask:
+            self.directory = '/data3/zihanwa3/Capstone-DSR/Appendix/SR_49'
+        else:
+            self.directory = '/data3/zihanwa3/Capstone-DSR/Appendix/SR_7_pls'
+
+        self.jpg_filenames = self.get_jpg_filenames(self.directory)
+        self.near = 1e-7
+        self.far = 70.0
+        self.indices = []
+
+        self.t = 0
+        for lis in [self.jpg_filenames]:
+            for iiiindex, c in sorted(enumerate(lis)):
+                self.indices.append(('ego', iiiindex, c))
+
+        # Initialize lists to hold preloaded data
+        self.cams = []
+
+        self.Ks=[]
+        self.w2cs=[]
+        self.images = []
+        self.masks = []
+        self.depths = []
+        self.features = []
+        self.ids = []
+        self.antimasks = []
+        self.visibilities = []
+        print("Preloading data...")
+
+        print(len(self.indices), 'leenen')
+        for idx, (data_type, iiiindex, c) in enumerate(self.indices):
+          cam = self.load_cam(c)
+          im = self.load_im(c)
+          mask_tensor = self.load_mask(c)
+          anti_mask_tensor = mask_tensor < 1e-2
+
+          self.cams.append(cam)
+          self.Ks.append(torch.tensor(cam['K']))
+          self.w2cs.append(torch.tensor(cam['w2c']))
+
+          self.images.append(im)
+          self.masks.append(mask_tensor)
+          self.antimasks.append(anti_mask_tensor)
+          self.ids.append(iiiindex)
+          self.visibilities.append(True)
+
+          #depth = self.load_depth(c)
+          feature = self.load_feature(c)
+          #self.depths.append(depth)
+          self.features.append(feature)
+
+        print("Data preloading complete.")
+
+    def get_jpg_filenames(self, directory):
+        jpg_files = [int(file.split('.')[0]) for file in os.listdir(directory) if file.endswith('.jpg')]
+        return jpg_files
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        data = {}
+        cam = self.cams[idx]
+        w2cs = self.w2cs[idx].float()
+        K = self.Ks[idx].float()
+
+        im = self.images[idx]
+        id_ = self.ids[idx]
+        data['w2cs'] = w2cs.float()
+        data['Ks'] = K.float()
+        data['imgs'] = im.float()
+        data['id'] = id_
+        data['valid_masks'] = self.antimasks[idx].float()
+        #data['depths'] = self.depths[idx]
+        data['feats'] = self.features[idx].float()
+
+        return data
+
+    def load_cam(self, c):
+        """Load camera parameters for a given index."""
+        md = self.md
+        t = self.t
+        h, w = md['hw'][c]
+        k = md['k'][t][c]
+        w2c = np.linalg.inv(md['w2c'][t][c])
+        cam = self.setup_camera(w, h, k, w2c, near=self.near, far=self.far)
+        return cam
+
+    def load_im(self, c):
+        """Load image for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+        try:
+          im_path = f"/ssd0/zihanwa3/data_ego/{self.seq}/ims/undist_data/{fn}"
+          im = torch.from_numpy(imageio.imread(im_path)).float() / 255.0
+        except:
+          im_path = f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{self.seq}/ims/{fn}"
+          im = torch.from_numpy(imageio.imread(im_path)).float() / 255.0
+        return im
+
+    def load_im_stat(self, c):
+        """Load static image for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+        im_path = f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{self.seq}/ims/{fn}"
+        im = np.array(Image.open(im_path))
+        im = torch.tensor(im).float().permute(2, 0, 1) / 255
+        return im
+
+    def load_mask(self, c):
+        """Load mask for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+
+        if self.dino_mask:
+            mask_path = f"/ssd0/zihanwa3/data_ego/lalalal_newmask/{fn.split('/')[-1]}"
+        else:
+            mask_path = f"/ssd0/zihanwa3/data_ego/SR_7_mask/{fn.split('/')[-1].replace('.jpg', '.png')}"
+
+
+        mask_npz_path = f"/data3/zihanwa3/Capstone-DSR/Appendix/SR_49_clean_mask/{fn.split('/')[-1].replace('.jpg', '.npz')}"
+        mask = np.load(mask_npz_path)['mask'][0]
+
+        print(mask.shape, 'maskshape')
+
+        transform = transforms.ToTensor()
+        mask_tensor = transform(mask).squeeze(0)
+        return mask_tensor
+
+    def load_depth(self, c):
+        """Load depth map for a given index."""
+        depth_path = f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
+        depth_data = np.load(depth_path)['depth_map']
+        depth = torch.tensor(depth_data)
+        return depth
+
+    def load_feature(self, c):
+        """Load feature map for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+        feature_path = f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/bg_feats/{fn.replace(".jpg", ".npy")}'
+        dinov2_feature = torch.tensor(np.load(feature_path))
+        return dinov2_feature
+
+    def load_depth_stat(self, c):
+        """Load static depth map for a given index."""
+        depth_path = f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
+        depth_data = np.load(depth_path)['depth_map']
+        disp_map = depth_data
+
+        nonzero_mask = disp_map != 0
+        disp_map[nonzero_mask] = disp_map[nonzero_mask]
+        valid_depth_mask = (disp_map > 0) & (disp_map <= self.far)
+        disp_map[~valid_depth_mask] = 0
+        depth_map = np.full(disp_map.shape, np.inf)
+        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
+        depth_map[depth_map == np.inf] = 0
+        depth_map = depth_map.astype(np.float32)
+        depth = torch.tensor(depth_map)
+        return depth
+
+    def setup_camera(self, w, h, k, w2c, near, far):
+        """Set up camera parameters."""
+        # Replace this placeholder with your actual camera setup implementation
+        cam = {
+            'w': w,
+            'h': h,
+            'K': k,
+            'w2c': w2c,
+            'near': near,
+            'far': far
+        }
+        return cam
+
+    # Optional get_ methods to access preloaded data
+    def get_cam(self, idx):
+        return self.cams[idx]
+
+    def get_Ks(self):
+        return torch.cat(self.Ks)
+
+    def get_w2cs(self):
+        return torch.cat(self.w2cs)
+
+    def get_im(self, idx):
+        return self.images[idx]
+
+    def get_mask(self, idx):
+        return self.masks[idx]
+
+    def get_depth(self, idx):
+        return self.depths[idx]
+
+    def get_feature(self, idx):
+        return self.features[idx]
+    
+
+
+
+class StatDataset(Dataset):
+    def __init__(self, t, md, seq, mode='stat_only', clean_img=True, depth_loss=False, debug_mode='no'):
+        self.md = md
+        self.seq = seq
+
+        self.near = 1e-7
+        self.far = 70.0
+        self.indices = []
+
+        self.t = 0
+        for lis in [[1400,1401,1402,1403]]:
+            for iiiindex, c in sorted(enumerate(lis)):
+                self.indices.append(('ego', iiiindex, c))
+
+        # Initialize lists to hold preloaded data
+        self.cams = []
+
+        self.Ks=[]
+        self.w2cs=[]
+        self.images = []
+        self.masks = []
+        self.depths = []
+        self.features = []
+        self.ids = []
+        self.antimasks = []
+        self.visibilities = []
+        print("Preloading data...")
+
+        print(len(self.indices), 'leenen')
+        for idx, (data_type, iiiindex, c) in enumerate(self.indices):
+          cam = self.load_cam(c)
+          h, w = 2160, 3840
+          H, W = 288, 512
+          im = self.load_im(c)
+          im = im.permute(2, 0, 1)  # Now im is of shape [3, 2160, 3840]
+
+          # Add batch dimension (needed for interpolation)
+          im = im.unsqueeze(0)  # Shape becomes [1, 3, 2160, 3840]
+
+          # Resize the image
+          H, W = 288, 512
+          resized_im = F.interpolate(im, size=(H, W), mode='bilinear', align_corners=False)
+
+          # Remove the batch dimension
+          resized_im = resized_im.squeeze(0)  # Shape is back to [3, 288, 512]
+
+          # Permute back to original shape [H, W, C] if needed
+          im = resized_im.permute(1, 2, 0) 
+
+
+
+          self.cams.append(cam)
+
+          k = torch.tensor(cam['K']).float()
+          sy, sx = H / h, W / w
+          fx, fy, cx, cy = k[0][0],  k[1][1], k[0][2], k[1][2], # (4,)
+
+          K = torch.tensor([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]]).float() # (3, 3)
+
+          self.Ks.append(K)
+          self.w2cs.append(torch.tensor(cam['w2c']).float())
+
+          self.images.append(im)
+          self.ids.append(iiiindex)
+          self.visibilities.append(True)
+
+          depth = self.load_depth(c)
+
+          dus_depth = self.load_dus_depth(c)
+          dus_depth = dus_depth.unsqueeze(0).unsqueeze(0)  # Shape becomes [1, 1, 2160, 3840]
+          dus_depth = F.interpolate(dus_depth, size=(H, W), mode='bilinear', align_corners=False)
+          dus_depth = dus_depth.squeeze(0).squeeze(0)  
+
+          mask = dus_depth > 0
+
+          # Apply the mask to filter out zero values
+          filtered_dus_depth = dus_depth[mask]
+          filtered_depth = depth[mask]
+
+          # Use nonzero for aligning
+          ms_colmap_disp = filtered_dus_depth - torch.median(filtered_dus_depth) + 1e-8
+          ms_mono_disp = filtered_depth - torch.median(filtered_depth) + 1e-8
+
+
+          scale = np.median(ms_colmap_disp / ms_mono_disp)
+          depth =  depth *scale
+          feature = self.load_feature(c)
+          print(feature.shape, im.shape)
+          self.depths.append(depth)
+          self.features.append(feature)
+
+        print("Data preloading complete.")
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        data = {}
+        cam = self.cams[idx]
+        w2cs = self.w2cs[idx].float()
+        K = self.Ks[idx].float()
+
+        im = self.images[idx]
+        id_ = self.ids[idx]
+        data['w2cs'] = w2cs.float()
+        data['Ks'] = K.float()
+        data['imgs'] = im.float()
+        data['id'] = id_
+        #data['valid_masks'] = self.antimasks[idx].float()
+        # data['depths'] = self.depths[idx]
+        data['feats'] = self.features[idx].float()
+
+        return data
+
+    def get_bkgd_points(
+        self,
+        num_samples: int,
+        use_kf_tstamps: bool = True,
+        stride: int = 8,
+        down_rate: int = 8,
+        min_per_frame: int = 64,
+        **kwargs,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        H, W = self.get_image(0).shape[:2]
+        grid = torch.stack(
+            torch.meshgrid(
+                torch.arange(0, W, dtype=torch.float32),
+                torch.arange(0, H, dtype=torch.float32),
+                indexing="xy",
+            ),
+            dim=-1,
+        )
+        bg_geometry = []
+        for query_idx in tqdm([0, 1, 2, 3 ], desc="Loading bkgd points", leave=False):
+            img = self.get_image(query_idx).float()
+            depth = self.get_depth(query_idx).float()
+            feats = self.get_feat(query_idx).float()
+            bg_mask = torch.ones_like(depth)# self.get_mask(query_idx) < 0
+            bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
+            bool_mask = (bg_mask).to(torch.bool)
+            w2c = self.w2cs[query_idx]
+            K = self.Ks[query_idx]
+            bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
+
+            points = (
+                torch.einsum(
+                    "ij,pj->pi",
+                    torch.linalg.inv(K),
+                    F.pad(grid[bool_mask], (0, 1), value=1.0),
+                )
+                * depth[bool_mask][:, None]
+            ).float()
+            points = torch.einsum(
+                "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points.float(), (0, 1), value=1.0)
+            )
+            point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
+            point_colors = img[bool_mask]
+            point_feats = feats[bool_mask]#torch.ones((point_colors.shape[0], 32))
+
+            points = points#[sel_idcs]
+            point_normals = point_normals#[sel_idcs]
+            point_colors = point_colors#[sel_idcs]
+            print(query_idx, points.shape)
+            bg_geometry.append((points.float(), point_normals.float(), point_colors.float(), point_feats.float()))
+
+        bg_points, bg_normals, bg_colors, bg_feats = map(
+            partial(torch.cat, dim=0), zip(*bg_geometry)
+        )
+        print('query_idx', bg_points.shape)
+        bg_points = bg_points#[sel_idcs]
+        bg_normals = bg_normals#[sel_idcs]
+        bg_colors = bg_colors#[sel_idcs]
+
+        return bg_points, bg_normals, bg_colors, bg_feats
+
+    def load_cam(self, c):
+        """Load camera parameters for a given index."""
+        md = self.md
+        t = self.t
+        h, w = md['hw'][c]
+        k = md['k'][t][c]
+        w2c = np.linalg.inv(md['w2c'][t][c])
+        cam = self.setup_camera(w, h, k, w2c, near=self.near, far=self.far)
+        return cam
+
+    def load_im(self, c):
+        """Load image for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+
+        im_path = f"/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/{self.seq}/ims/{fn}"
+        im = torch.from_numpy(imageio.imread(im_path)).float() / 255.0
+        return im
+
+    def load_dus_depth(self, c):
+        """Load depth map for a given index."""
+        depth_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean/0/conf_depth_{c-1400}.npy'
+        depth_data = np.load(depth_path)# ['depth_map']
+        depth = torch.tensor(depth_data)
+        return depth
+
+
+    def load_depth(self, c):
+        """Load depth map for a given index."""
+        depth_path = f'/data3/zihanwa3/Capstone-DSR/any_scripts/stat_depths_512/{c-1399}.npy'
+        depth_data = np.load(depth_path)# ['depth_map']
+        depth = torch.tensor(depth_data)
+        return depth
+
+    def load_feature(self, c):
+        """Load feature map for a given index."""
+        md = self.md
+        t = self.t
+        fn = md['fn'][t][c]
+        feature_path = f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/bg_feats/{fn.replace(".jpg", ".npy")}'
+        dinov2_feature = torch.tensor(np.load(feature_path))
+        return dinov2_feature
+
+    def load_depth_stat(self, c):
+        """Load static depth map for a given index."""
+        depth_path = f'/data3/zihanwa3/Capstone-DSR/Processing/da_v2_disp/0/disp_{c}.npz'
+        depth_data = np.load(depth_path)['depth_map']
+        disp_map = depth_data
+
+        nonzero_mask = disp_map != 0
+        disp_map[nonzero_mask] = disp_map[nonzero_mask]
+        valid_depth_mask = (disp_map > 0) & (disp_map <= self.far)
+        disp_map[~valid_depth_mask] = 0
+        depth_map = np.full(disp_map.shape, np.inf)
+        depth_map[disp_map != 0] = 1 / disp_map[disp_map != 0]
+        depth_map[depth_map == np.inf] = 0
+        depth_map = depth_map.astype(np.float32)
+        depth = torch.tensor(depth_map)
+        return depth
+
+    def setup_camera(self, w, h, k, w2c, near, far):
+        """Set up camera parameters."""
+        # Replace this placeholder with your actual camera setup implementation
+        cam = {
+            'w': w,
+            'h': h,
+            'K': k,
+            'w2c': w2c,
+            'near': near,
+            'far': far
+        }
+        return cam
+
+    # Optional get_ methods to access preloaded data
+    def get_cam(self, idx):
+        return self.cams[idx]
+
+    def get_Ks(self):
+        return torch.cat(self.Ks)
+
+    def get_w2cs(self):
+        return torch.cat(self.w2cs)
+
+    def get_image(self, idx):
+        return self.images[idx]
+
+    def get_mask(self, idx):
+        return self.masks[idx]
+
+    def get_depth(self, idx):
+        return self.depths[idx]
+
+    def get_feat(self, idx):
+        return self.features[idx]
+    

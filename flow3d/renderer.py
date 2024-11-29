@@ -7,7 +7,7 @@ from nerfview import CameraState
 from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import draw_tracks_2d_th, get_server
 from flow3d.vis.viewer import DynamicViewer
-from flow3d.params import GaussianParams
+from flow3d.params import GaussianParams, GaussianParamsOthers
 import pickle
 
 class Renderer:
@@ -56,10 +56,12 @@ class Renderer:
 
             # Concatenate the noisy copies into a single array of shape [100, ...]
             #self.pc = noisy_pc = np.stack(noisy_copies, axis=0)
-
-
         else:
-          self.num_frames = model.num_frames
+          if self.model.fg is not None:
+            self.num_frames = model.num_frames
+          else:
+            self.num_frames = 1
+
 
         self.work_dir = work_dir
         self.global_step = 0
@@ -79,19 +81,28 @@ class Renderer:
         else:
           if port is not None:
               server = get_server(port=port)
-              if fg_only:
-                self.viewer = DynamicViewer(
-                    server, self.render_fn_fg, model.num_frames, work_dir, mode="rendering"
-                )
-              else:
-                self.viewer = DynamicViewer(
-                    server, self.render_fn, model.num_frames, work_dir, mode="rendering"
-                )
-          self.tracks_3d = self.model.compute_poses_fg(
-              #  torch.arange(max(0, t - 20), max(1, t), device=self.device),
-              torch.arange(self.num_frames, device=self.device),
-              inds=torch.arange(49, device=self.device),
-          )[0]
+              if self.model.fg is not None:
+                if fg_only:
+                  self.viewer = DynamicViewer(
+                      server, self.render_fn_fg, self.num_frames, work_dir, mode="rendering"
+                  )
+                else:
+                  self.viewer = DynamicViewer(
+                      server, self.render_fn, self.num_frames, work_dir, mode="rendering"
+                  )
+              else: 
+                  self.viewer = DynamicViewer(
+                      server, self.render_fn_bg, self.num_frames, work_dir, mode="rendering"
+                  )
+
+          if self.model.fg is not None:
+            self.tracks_3d = self.model.compute_poses_fg(
+                #  torch.arange(max(0, t - 20), max(1, t), device=self.device),
+                torch.arange(self.num_frames, device=self.device),
+                inds=torch.arange(49, device=self.device),
+            )[0]
+          else:
+            self.tracks_3d = None 
 
     @staticmethod
     def init_from_checkpoint(
@@ -104,29 +115,50 @@ class Renderer:
         model = model.to(device)
 
         # print('CAUSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS_DOTHETRICKS')
-        do_my_trick=True
-        if do_my_trick:
-           model.bg.params['scales'] = 0.83 * model.bg.params['scales']
+
         '''
         def get_scales(self) -> torch.Tensor:
           return self.scale_activation(self.params["scales"])
+
+        rendervar = {
+            'means3D': params['means3D'],
+            'colors_precomp': params['rgb_colors'],
+            'rotations': torch.nn.functional.normalize(params['unnorm_rotations']),
+            'semantic_feature': params['semantic_feature'],
+            'opacities': torch.sigmoid(params['logit_opacities']),
+            'scales': torch.exp(params['log_scales']),
+            'means2D': torch.zeros_like(params['means3D'], requires_grad=True, device="cuda") + 0,
+            'label': params['label']
+
+        }
+
         
         '''
-        '''ckpt_path=f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/old_output/4.9M/cmu_bike/params_iter_5000.npz'
+        ckpt_path='/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/output/1_conf_bg_new_clip/cmu_bike/params_iter_10000.npz'
         params = dict(np.load(ckpt_path, allow_pickle=True))
 
-        for k, v in model.bg.params.items():
-           print(k, v.max())
         params = {k: torch.tensor(params[k]).cuda().float().requires_grad_(True) for k in params.keys()}
         means = params['means3D']#[0]
         quats = params['unnorm_rotations']#[0]
         scales = params['log_scales']
-        colors = params['rgb_colors'] * 10#* 255#[0]
-        opacities = params['logit_opacities'][:, 0]
+        colors = params['rgb_colors'] #* 10#* 255#[0]
+        opacities = (params['logit_opacities'][:, 0])#.clip(0, 1)
 
-        model.bg = GaussianParams(means, quats, scales, colors, opacities)
+
+        if model.fg is not None:
+          path = 'resultsbike_bg_only/test779/checkpoints/last.ckpt'
+          state_dict =  torch.load(path)["model"]
+          model_bg = SceneModel.init_from_state_dict(state_dict)
+          model_bg = model_bg.to(device)
+          model.bg = model_bg.bg
+
+          #model.bg = GaussianParamsOthers(means, quats, scales, colors, opacities)
+        do_my_trick=True
+        if do_my_trick:
+           model.bg.params['scales'] = 0.87 * model.bg.params['scales']
+
         for k, v in model.bg.params.items():
-           print(k, v.max())'''
+           print(k, v.mean())
         renderer = Renderer(model, device, *args, **kwargs)
 
            
@@ -373,6 +405,41 @@ class Renderer:
               return pca_features_image
 
             img = (img.cpu().numpy() * 255.0).astype(np.uint8)
+        else:
+            assert t is not None
+            tracks_3d = self.tracks_3d[:, max(0, t - 20) : max(1, t)]
+            tracks_2d = torch.einsum(
+                "ij,jk,nbk->nbi", K, w2c[:3], F.pad(tracks_3d, (0, 1), value=1.0)
+            )
+            tracks_2d = tracks_2d[..., :2] / tracks_2d[..., 2:]
+            img = draw_tracks_2d_th(img, tracks_2d)
+        return img
+
+    @torch.inference_mode()
+    def render_fn_bg(self, camera_state: CameraState, img_wh: tuple[int, int]):
+        if self.viewer is None:
+            return np.full((img_wh[1], img_wh[0], 3), 255, dtype=np.uint8)
+
+        W, H = img_wh
+        focal = 0.5 * H / np.tan(0.5 * camera_state.fov).item()
+        cx, cy =  W / 2.0, H / 2.0
+        cx -= 0.5
+        cy -= 0.5
+        K = torch.tensor(
+            [[focal, 0.0, cx], [0.0, focal, cy], [0.0, 0.0, 1.0]],
+            device=self.device,
+        )
+        w2c = torch.linalg.inv(
+            torch.from_numpy(camera_state.c2w.astype(np.float32)).to(self.device)
+        )
+        t = None
+        self.model.training = False
+        img = self.model.render_stat_bg(t, w2c[None], K[None], img_wh, )["img"][0]
+        # feat = self.model.render(t, w2c[None], K[None], img_wh, )["feat"][0]
+
+        if not self.viewer._render_track_checkbox.value:
+            img = (img.cpu().numpy() * 255.0).astype(np.uint8)
+            
         else:
             assert t is not None
             tracks_3d = self.tracks_3d[:, max(0, t - 20) : max(1, t)]

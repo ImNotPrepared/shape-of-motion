@@ -161,6 +161,16 @@ class MotionBases(nn.Module):
         rotmats = cont_6d_to_rmat(rots)  # (K, B, 3, 3)
         return torch.cat([rotmats, transls[..., None]], dim=-1)
 
+class GaussianParamsOthers(GaussianParams):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.quat_activation = lambda x: F.normalize(x, dim=-1, p=2)
+        self.color_activation =  lambda x: x# torch.clamp(x, 0, 1)
+# lambda x: torch.clamp(x, 0, 1)
+        self.scale_activation = torch.exp
+        self.opacity_activation = torch.sigmoid
+
 
 def check_gaussian_sizes(
     means: torch.Tensor,

@@ -3,7 +3,7 @@ from dataclasses import asdict, replace
 from torch.utils.data import Dataset
 
 from .base_dataset import BaseDataset
-from .casual_dataset import CasualDataset, CustomDataConfig, CasualDatasetVideoView, DavisDataConfig
+from .casual_dataset import CasualDataset, CustomDataConfig, CasualDatasetVideoView, DavisDataConfig, EgoDataset, StatDataset
 from .iphone_dataset import (
     iPhoneDataConfig,
     iPhoneDataset,
@@ -71,3 +71,5 @@ def get_train_val_datasets(
 
 
     return train_dataset, train_video_view, val_img_dataset, val_kpt_dataset
+
+

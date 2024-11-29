@@ -9,7 +9,7 @@ sequences=(
 )
 
 # Explicit GPU ID list
-gpu_ids=(2 3 6 7)
+gpu_ids=(3 4 7 6)
 
 # Number of available GPUs
 num_gpus=${#gpu_ids[@]}
@@ -19,7 +19,7 @@ for ((idx=0; idx<${#sequences[@]}; idx++))
 do
     gpu_id=${gpu_ids[$(( idx % num_gpus ))]}  # Assign GPU from the list in a round-robin fashion
     seq="${sequences[idx]}"
-    CUDA_VISIBLE_DEVICES=$gpu_id python dance_glb.py --seq_name "$seq" --exp "$EXP" &
+    CUDA_VISIBLE_DEVICES=$gpu_id python dance_glb.py --seq_name "$seq" --exp "$EXP" --depth_type 'modest' &
 done
 
 # Wait for all background jobs to complete

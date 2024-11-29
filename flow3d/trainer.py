@@ -49,7 +49,12 @@ class Trainer:
         self.validate_viewer_assets_every = validate_viewer_assets_every
 
         self.model = model
-        self.num_frames = model.num_frames
+      
+        if hasattr(model, 'num_frames'):
+            self.num_frames = model.num_frames
+        else:
+            print("num_frames is not an attribute of the model.")
+
 
         self.lr_cfg = lr_cfg
         self.losses_cfg = losses_cfg
@@ -162,6 +167,25 @@ class Trainer:
         img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
         return (img.cpu().numpy() * 255.0).astype(np.uint8)
 
+    def train_stat_step(self, batch, batch_stat=None):
+        if self.viewer is not None:
+            while self.viewer.state.status == "paused":
+                time.sleep(0.1)
+            self.viewer.lock.acquire()
+
+        loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_stat_losses(batch, batch_stat)
+        print('NUM_of_Gaussians', self.model.bg.num_gaussians)
+        self.stats = stats 
+        wandb.log(self.stats)
+        self.num_rays_per_sec=num_rays_per_sec
+        self.num_rays_per_step = num_rays_per_step
+        if loss.isnan():
+            guru.info(f"Loss is NaN at step {self.global_step}!!")
+            import ipdb
+
+            ipdb.set_trace()
+        #loss.backward()
+        return loss
 
       
     def train_step(self, batch):
@@ -207,6 +231,374 @@ class Trainer:
 
         #return loss.item()
 
+
+    def compute_stat_losses(self, batch, batch_stat=None):
+        self.model.training = True
+        B = len(batch) * batch[0]["imgs"].shape[0]
+        W, H = img_wh = batch[0]["imgs"].shape[2:0:-1]
+        import torch
+        w2cs = torch.cat([b["w2cs"] for b in batch], dim=0)  
+        Ks = torch.cat([b["Ks"] for b in batch], dim=0)  # (sum of B across batches, 3, 3)
+        imgs = torch.cat([b["imgs"] for b in batch], dim=0)  # (sum of B across batches, H, W, 3)
+        device = imgs.device
+        feats = None
+        if 'feats' in batch[0].keys():
+          feats = torch.cat([b["feats"] for b in batch], dim=0)
+          # feats = feats.permute(0, 3, 1, 2)  # [8, 32, 512, 512]
+          #upsampled_feats = F.interpolate(feats, size=(2160, 3840), mode='bilinear', align_corners=False)
+          #feats = upsampled_feats.permute(0, 2, 3, 1)
+
+        depths = None
+
+        if 'depths' in batch[0].keys():
+            depths = torch.cat([b["depths"] for b in batch], dim=0)
+        valid_masks = torch.cat([b.get("valid_masks",  torch.ones_like(b["imgs"][..., 0])) for b in batch], dim=0)  # (sum of B across batches, H, W)
+        #print(valid_masks.shape, imgs.shape, feats.shape, 'shappppeeCHEKC')
+        _tic = time.time()
+
+        loss = 0.0
+        bg_colors = []
+        bg_feats = []
+        rendered_all = []
+        self._batched_xys = []
+        self._batched_radii = []
+        self._batched_img_wh = []
+        t=None
+        for i in range(B):
+            bg_color = torch.ones(1, 3, device=device)
+            bg_feat =  torch.ones(1, 32, device=device)
+            rendered = self.model.render_stat_bg(
+                t,
+                w2cs[None, i],
+                Ks[None, i],
+                img_wh,
+                bg_color=bg_color,
+                return_depth=True,
+                return_mask=False,
+                fg_only=not self.model.has_bg
+            )
+            rendered_all.append(rendered)
+            bg_colors.append(bg_color)
+            bg_feats.append(bg_feat)
+            if (
+                self.model._current_xys is not None
+                and self.model._current_radii is not None
+                and self.model._current_img_wh is not None
+            ):
+                self._batched_xys.append(self.model._current_xys)
+                self._batched_radii.append(self.model._current_radii)
+                self._batched_img_wh.append(self.model._current_img_wh)
+
+        # Necessary to make viewer work.
+        num_rays_per_step = H * W * B
+        num_rays_per_sec = num_rays_per_step / (time.time() - _tic)
+
+        rendered_all = {
+            key: (
+                torch.cat([out_dict[key] for out_dict in rendered_all], dim=0)
+                if rendered_all[0][key] is not None
+                else None
+            )
+            for key in rendered_all[0]
+        }
+
+        bg_colors = torch.cat(bg_colors, dim=0)
+        bg_feats = torch.cat(bg_feats, dim=0)
+
+        if not self.model.has_bg:
+            imgs = (
+                imgs * masks[..., None]
+                + (1.0 - masks[..., None]) * bg_colors[:, None, None]
+            )
+            if feats is not None:
+              feats = (
+                  feats * masks[..., None]
+                  + (1.0 - masks[..., None]) * bg_feats[:, None, None]
+              )
+
+        else:
+            imgs = (
+                imgs * valid_masks[..., None]
+                + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+            )
+            if feats is not None:
+              feats = (
+                  feats * valid_masks[..., None]
+                  + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+              )
+
+        # RGB loss.
+
+        
+        rendered_imgs = cast(torch.Tensor, rendered_all["img"])
+        if self.model.has_bg:
+            rendered_imgs = (
+                rendered_imgs * valid_masks[..., None]
+                + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+            )
+
+        if 'feat' in rendered_all.keys():
+          rendered_feats = cast(torch.Tensor, rendered_all["feat"])
+          if self.model.has_bg:
+              if feats is not None:
+                rendered_feats = (
+                    rendered_feats * valid_masks[..., None]
+                    + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+                )
+                feat_loss = 0.8 * F.mse_loss(rendered_feats, feats) 
+                loss += feat_loss * self.losses_cfg.w_feat
+
+
+
+        rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
+            1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
+        )
+        loss += rgb_loss * self.losses_cfg.w_rgb
+
+        depth_masks = (
+            valid_masks[..., None]
+        )
+
+        if depths is not None:
+          pred_depth = cast(torch.Tensor, rendered_all["depth"])
+          pred_disp = 1.0 / (pred_depth + 1e-5)
+          tgt_disp = 1.0 / (depths[..., None] + 1e-5)
+          depth_loss = masked_l1_loss(
+              pred_disp,
+              tgt_disp,
+              mask=depth_masks,
+              quantile=0.98,
+          )
+
+          loss += depth_loss * self.losses_cfg.w_depth_reg
+
+          #  depth_gradient_loss = 0.0
+          depth_gradient_loss = compute_gradient_loss(
+              pred_disp,
+              tgt_disp,
+              mask=depth_masks > 0.5,
+              quantile=0.95,
+          )
+
+          loss += depth_gradient_loss * self.losses_cfg.w_depth_grad
+
+        if self.model.bg is not None:
+            mea_rgbbb = (
+                self.losses_cfg.w_scale_var
+                * torch.var(self.model.bg.params["scales"], dim=-1).mean()
+            )
+            loss += mea_rgbbb
+        ###### batch_Stat ##########
+        if batch_stat:
+            B = len(batch_stat) * batch_stat[0]["imgs"].shape[0]
+            W, H = img_wh = batch_stat[0]["imgs"].shape[2:0:-1]
+            
+            w2cs = torch.cat([b["w2cs"] for b in batch_stat], dim=0)  
+            Ks = torch.cat([b["Ks"] for b in batch_stat], dim=0)  # (sum of B across batches, 3, 3)
+            imgs = torch.cat([b["imgs"] for b in batch_stat], dim=0)  # (sum of B across batches, H, W, 3)
+            device = imgs.device
+            feats = None
+            if 'feats' in batch_stat[0].keys():
+              feats = torch.cat([b["feats"] for b in batch_stat], dim=0).permute(0, 3, 1, 2)  # [8, 32, 512, 512]
+              upsampled_feats = F.interpolate(feats, size=(1408, 1408), mode='bilinear', align_corners=False)
+              feats = upsampled_feats.permute(0, 2, 3, 1)
+
+            depths = None
+            valid_masks = torch.cat([b.get("valid_masks", torch.ones_like(b["imgs"][..., 0])) for b in batch_stat], dim=0)  # (sum of B across batches, H, W)
+
+            _tic = time.time()
+            bg_colors = []
+            bg_feats = []
+            rendered_all = []
+            self._batched_xys = []
+            self._batched_radii = []
+            self._batched_img_wh = []
+            t = None
+            
+            for i in range(B):
+                bg_color = torch.ones(1, 3, device=device)
+                bg_feat = torch.ones(1, 32, device=device)
+                rendered = self.model.render_stat_bg(
+                    t,
+                    w2cs[None, i],
+                    Ks[None, i],
+                    img_wh,
+                    bg_color=bg_color,
+                    return_depth=True,
+                    return_mask=False,
+                    fg_only=not self.model.has_bg
+                )
+                rendered_all.append(rendered)
+                bg_colors.append(bg_color)
+                bg_feats.append(bg_feat)
+                if (
+                    self.model._current_xys is not None
+                    and self.model._current_radii is not None
+                    and self.model._current_img_wh is not None
+                ):
+                    self._batched_xys.append(self.model._current_xys)
+                    self._batched_radii.append(self.model._current_radii)
+                    self._batched_img_wh.append(self.model._current_img_wh)
+
+            # Necessary to make viewer work.
+            num_rays_per_step = H * W * B
+            num_rays_per_sec = num_rays_per_step / (time.time() - _tic)
+
+            rendered_all = {
+                key: (
+                    torch.cat([out_dict[key] for out_dict in rendered_all], dim=0)
+                    if rendered_all[0][key] is not None
+                    else None
+                )
+                for key in rendered_all[0]
+            }
+
+            bg_colors = torch.cat(bg_colors, dim=0)
+            bg_feats = torch.cat(bg_feats, dim=0)
+
+            if not self.model.has_bg:
+                imgs = (
+                    imgs * masks[..., None]
+                    + (1.0 - masks[..., None]) * bg_colors[:, None, None]
+                )
+                if feats is not None:
+                    feats = (
+                        feats * masks[..., None]
+                        + (1.0 - masks[..., None]) * bg_feats[:, None, None]
+                    )
+            else:
+                imgs = (
+                    imgs * valid_masks[..., None]
+                    + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+                )
+                if feats is not None:
+                    feats = (
+                        feats * valid_masks[..., None]
+                        + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+                    )
+
+            # RGB loss.
+            rendered_imgs = cast(torch.Tensor, rendered_all["img"])
+            if self.model.has_bg:
+                rendered_imgs = (
+                    rendered_imgs * valid_masks[..., None]
+                    + (1.0 - valid_masks[..., None]) * bg_colors[:, None, None]
+                )
+
+            if 'feat' in rendered_all.keys():
+                rendered_feats = cast(torch.Tensor, rendered_all["feat"])
+                if self.model.has_bg:
+                    if feats is not None:
+                        rendered_feats = (
+                            rendered_feats * valid_masks[..., None]
+                            + (1.0 - valid_masks[..., None]) * bg_feats[:, None, None]
+                        )
+                        feat_loss = 0.8 * F.mse_loss(rendered_feats, feats)
+                        loss += feat_loss * self.losses_cfg.w_feat
+
+            rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
+            1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
+        )
+
+            loss += rgb_loss * 0 #self.losses_cfg.w_rgb
+
+            depth_masks = (
+                valid_masks[..., None]
+            )
+
+            if depths is not None :
+                pred_depth = cast(torch.Tensor, rendered_all["depth"])
+                pred_disp = 1.0 / (pred_depth + 1e-5)
+                tgt_disp = 1.0 / (depths[..., None] + 1e-5)
+                depth_loss = masked_l1_loss(
+                    pred_disp,
+                    tgt_disp,
+                    mask=depth_masks,
+                    quantile=0.98,
+                )
+
+                loss += depth_loss * self.losses_cfg.w_depth_reg
+
+                depth_gradient_loss = compute_gradient_loss(
+                    pred_disp,
+                    tgt_disp,
+                    mask=depth_masks > 0.5,
+                    quantile=0.95,
+                )
+
+                loss += depth_gradient_loss * self.losses_cfg.w_depth_grad
+
+            if self.model.bg is not None:
+                loss += (
+                    self.losses_cfg.w_scale_var
+                    * torch.var(self.model.bg.params["scales"], dim=-1).mean()
+                )
+
+
+        try:
+          stats = {
+              "train/loss": loss.item(),
+              "train/feat_loss": feat_loss.item(),
+              # "train/depth_loss": depth_loss.item(),
+              "train/rgb_loss": rgb_loss.item(),
+              "train/std_loss": mea_rgbbb.item(),
+              "train/num_gaussians": self.model.num_gaussians,
+              "train/num_fg_gaussians": self.model.num_fg_gaussians,
+              "train/num_bg_gaussians": self.model.num_bg_gaussians,
+          }
+        except:
+          stats = {
+              "train/loss": loss.item(),
+              # "train/depth_loss": depth_loss.item(),
+              "train/rgb_loss": rgb_loss.item(),
+              "train/std_loss": mea_rgbbb.item(),
+              "train/num_gaussians": self.model.num_gaussians,
+              "train/num_fg_gaussians": self.model.num_fg_gaussians,
+              "train/num_bg_gaussians": self.model.num_bg_gaussians,
+          }           
+    
+
+        '''stats = {
+            "train/loss": loss.item(),
+            "train/rgb_loss": rgb_loss.item(),
+            "train/feat_loss": feat_loss.item(),
+            "train/mask_loss": mask_loss.item(),
+            "train/depth_loss": depth_loss.item(),
+            "train/depth_gradient_loss": depth_gradient_loss.item(),
+            "train/mapped_depth_loss": mapped_depth_loss.item(),
+            "train/track_2d_loss": track_2d_loss.item(),
+            "train/small_accel_loss": small_accel_loss.item(),
+            "train/z_acc_loss": z_accel_loss.item(),
+            "train/num_gaussians": self.model.num_gaussians,
+            "train/num_fg_gaussians": self.model.num_fg_gaussians,
+            "train/num_bg_gaussians": self.model.num_bg_gaussians,
+        }'''
+    
+        masks = valid_masks
+        with torch.no_grad():
+            psnr = self.psnr_metric(
+                rendered_imgs, imgs, masks if not self.model.has_bg else valid_masks
+            )
+            self.psnr_metric.reset()
+            stats["train/psnr"] = psnr
+            if self.model.has_bg:
+                bg_psnr = self.bg_psnr_metric(rendered_imgs, imgs, 1.0 - masks)
+                fg_psnr = self.fg_psnr_metric(rendered_imgs, imgs, masks)
+                self.bg_psnr_metric.reset()
+                self.fg_psnr_metric.reset()
+                stats["train/bg_psnr"] = bg_psnr
+                stats["train/fg_psnr"] = fg_psnr
+
+        stats.update(
+            **{
+                "train/num_rays_per_sec": num_rays_per_sec,
+                "train/num_rays_per_step": float(num_rays_per_step),
+            }
+        )
+
+        return loss, stats, num_rays_per_step, num_rays_per_sec
+
+
     def compute_losses(self, batch):
 
         self.model.training = True
@@ -214,9 +606,6 @@ class Trainer:
         W, H = img_wh = batch[0]["imgs"].shape[2:0:-1]
 
         N = batch[0]["target_ts"][0].shape[0]
-
-
-
         import torch
         ts = torch.cat([b["ts"] for b in batch], dim=0)  # (sum of B across batches,)
 
@@ -299,7 +688,6 @@ class Trainer:
 
 
         target_mean_list = target_means.split(N)
-        num_frames = self.model.num_frames
 
         loss = 0.0
 
@@ -498,7 +886,7 @@ class Trainer:
         )
 
         loss += depth_loss * self.losses_cfg.w_depth_reg
-        print(loss)
+
         # mapped depth loss (using cached depth with EMA)
         #  mapped_depth_loss = 0.0
         mapped_depth_gt = torch.cat([x.reshape(-1) for x in target_track_depths], dim=0)
@@ -509,7 +897,6 @@ class Trainer:
         )
 
         loss += mapped_depth_loss * self.losses_cfg.w_depth_const
-        print(loss)
         #  depth_gradient_loss = 0.0
         depth_gradient_loss = compute_gradient_loss(
             pred_disp,
@@ -519,7 +906,7 @@ class Trainer:
         )
 
         loss += depth_gradient_loss * self.losses_cfg.w_depth_grad
-        print(loss)
+
         # bases should be smooth.
         small_accel_loss = compute_se3_smoothness_loss(
             self.model.motion_bases.params["rots"],
@@ -539,6 +926,7 @@ class Trainer:
         means_fg_nbs = means_fg_nbs.reshape(
             means_fg_nbs.shape[0], 3, -1, 3
         )  # [G, 3, n, 3]
+
         if self.losses_cfg.w_smooth_tracks > 0:
             small_accel_loss_tracks = 0.5 * (
                 (2 * means_fg_nbs[:, 1:-1] - means_fg_nbs[:, :-2] - means_fg_nbs[:, 2:])
@@ -558,14 +946,13 @@ class Trainer:
                 self.losses_cfg.w_scale_var
                 * torch.var(self.model.bg.params["scales"], dim=-1).mean()
             )
+        
 
         # # sparsity loss
         # loss += 0.01 * self.opacity_activation(self.opacities).abs().mean()
-        print(loss)
         # Acceleration along ray direction should be small.
         z_accel_loss = compute_z_acc_loss(means_fg_nbs, w2cs)
         loss += self.losses_cfg.w_z_accel * z_accel_loss
-        print(loss)
         # Prepare stats for logging.
         try:
           stats = {
@@ -633,7 +1020,10 @@ class Trainer:
         global_step = self.global_step
         # Adaptive gaussian control.
         cfg = self.optim_cfg
-        num_frames = self.model.num_frames
+        try:
+          num_frames = self.model.num_frames
+        except:
+          num_frames = 1
         ready = self._prepare_control_step()
         if (
             ready
@@ -700,7 +1090,12 @@ class Trainer:
         ].clamp_min(1)
         is_grad_too_high = xys_grad_avg > cfg.densify_xys_grad_threshold
         # Split gaussians.
-        scales = self.model.get_scales_all()
+        if self.model.fg is not None:
+          scales = self.model.get_scales_all()
+        else:
+          scales = self.model.bg.get_scales()
+
+      
         is_scale_too_big = scales.amax(dim=-1) > cfg.densify_scale_threshold
         if global_step < cfg.stop_control_by_screen_steps:
             is_radius_too_big = (
@@ -712,27 +1107,32 @@ class Trainer:
         should_split = is_grad_too_high & (is_scale_too_big | is_radius_too_big)
         should_dup = is_grad_too_high & ~is_scale_too_big
 
-        num_fg = self.model.num_fg_gaussians
-        should_fg_split = should_split[:num_fg]
-        num_fg_splits = int(should_fg_split.sum().item())
-        should_fg_dup = should_dup[:num_fg]
-        num_fg_dups = int(should_fg_dup.sum().item())
+        try:
+          num_fg = self.model.num_fg_gaussians
+          should_fg_split = should_split[:num_fg]
+          num_fg_splits = int(should_fg_split.sum().item())
+          should_fg_dup = should_dup[:num_fg]
+          num_fg_dups = int(should_fg_dup.sum().item())
+        except:
+          num_fg = 0
 
         should_bg_split = should_split[num_fg:]
         num_bg_splits = int(should_bg_split.sum().item())
         should_bg_dup = should_dup[num_fg:]
         num_bg_dups = int(should_bg_dup.sum().item())
 
-        fg_param_map = self.model.fg.densify_params(should_fg_split, should_fg_dup)
-        for param_name, new_params in fg_param_map.items():
-            full_param_name = f"fg.params.{param_name}"
-            optimizer = self.optimizers[full_param_name]
-            dup_in_optim(
-                optimizer,
-                [new_params],
-                should_fg_split,
-                num_fg_splits * 2 + num_fg_dups,
-            )
+
+        if self.model.fg is not None:
+          fg_param_map = self.model.fg.densify_params(should_fg_split, should_fg_dup)
+          for param_name, new_params in fg_param_map.items():
+              full_param_name = f"fg.params.{param_name}"
+              optimizer = self.optimizers[full_param_name]
+              dup_in_optim(
+                  optimizer,
+                  [new_params],
+                  should_fg_split,
+                  num_fg_splits * 2 + num_fg_dups,
+              )
 
         if self.model.bg is not None:
             bg_param_map = self.model.bg.densify_params(should_bg_split, should_bg_dup)
@@ -783,7 +1183,12 @@ class Trainer:
     def _cull_control_step(self, global_step):
         # Cull gaussians.
         cfg = self.optim_cfg
-        opacities = self.model.get_opacities_all()
+        if self.model.fg is not None:
+          opacities = self.model.get_opacities_all()
+          num_fg = self.model.num_fg_gaussians
+        else:
+          opacities = self.model.bg.get_opacities()
+          num_fg = 0
         device = opacities.device
         is_opacity_too_small = opacities < cfg.cull_opacity_threshold
         is_radius_too_big = torch.zeros_like(is_opacity_too_small, dtype=torch.bool)
@@ -791,7 +1196,7 @@ class Trainer:
         cull_scale_threshold = (
             torch.ones(len(is_scale_too_big), device=device) * cfg.cull_scale_threshold
         )
-        num_fg = self.model.num_fg_gaussians
+        
         cull_scale_threshold[num_fg:] *= self.model.bg_scene_scale
         if global_step > self.reset_opacity_every:
             scales = self.model.get_scales_all()
@@ -804,12 +1209,12 @@ class Trainer:
         
         should_fg_cull = should_cull[:num_fg]
         should_bg_cull = should_cull[num_fg:]
-
-        fg_param_map = self.model.fg.cull_params(should_fg_cull)
-        for param_name, new_params in fg_param_map.items():
-            full_param_name = f"fg.params.{param_name}"
-            optimizer = self.optimizers[full_param_name]
-            remove_from_optim(optimizer, [new_params], should_fg_cull)
+        if self.model.fg is not None:
+            fg_param_map = self.model.fg.cull_params(should_fg_cull)
+            for param_name, new_params in fg_param_map.items():
+                full_param_name = f"fg.params.{param_name}"
+                optimizer = self.optimizers[full_param_name]
+                remove_from_optim(optimizer, [new_params], should_fg_cull)
 
         if self.model.bg is not None:
             bg_param_map = self.model.bg.cull_params(should_bg_cull)

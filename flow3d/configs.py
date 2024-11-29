@@ -16,10 +16,10 @@ class FGLRConfig:
 class BGLRConfig:
     means: float = 1.6e-4
     opacities: float = 1e-2
-    scales: float = 1e-3
+    scales: float = 5e-3
     quats: float = 1e-3
     colors: float = 1e-2
-    feats: float = 1e-3
+    feats: float = 1e-2
 
 
 @dataclass
@@ -37,12 +37,12 @@ class SceneLRConfig:
 @dataclass
 class LossesConfig:
     w_rgb: float = 7.0
-    w_feat: float = 7.0 #0.01
-    w_depth_reg: float = 1.0
+    w_feat: float = 2.1 #0.01
+    w_depth_reg: float = 0.0
     w_depth_const: float = 0.0
     w_depth_grad: float = 0.0
     w_track: float = 2.0
-    w_mask: float = 5.0
+    w_mask: float = 10.0
     w_smooth_bases: float = 0.1
     w_smooth_tracks: float = 2.0
     w_scale_var: float = 0.01
@@ -68,8 +68,8 @@ class LossesGTConfig:
 class OptimizerConfig:
     max_steps: int = 5000
     ## Adaptive gaussian control
-    warmup_steps: int = 200
-    control_every: int = 200
+    warmup_steps: int = 50
+    control_every: int = 70
     reset_opacity_every_n_controls: int = 30
     stop_control_by_screen_steps: int = 4000
     stop_control_steps: int = 4000
@@ -81,9 +81,9 @@ class OptimizerConfig:
     densify_screen_threshold: float = 0.05
     stop_densify_steps: int = 2000
     ### Cull.
-    cull_opacity_threshold: float = 0.1# 0.1
+    cull_opacity_threshold: float = 0.5# 0.1
     # is_opacity_too_small = opacities < cfg.cull_opacity_threshold
-    cull_scale_threshold: float = 0.5# 0.5
+    cull_scale_threshold: float = 0.14# 0.5
     # is_scale_too_big = scales.amax(dim=-1) > cull_scale_threshold
     cull_screen_threshold: float = 0.15#0.15
     ##                is_radius_too_big = (
