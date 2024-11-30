@@ -146,7 +146,7 @@ class Renderer:
 
 
         if model.fg is not None:
-          path = 'resultsbike_bg_only/test779/checkpoints/last.ckpt'
+          path = 'resultsbike_bg_only/test773/checkpoints/last.ckpt'
           state_dict =  torch.load(path)["model"]
           model_bg = SceneModel.init_from_state_dict(state_dict)
           model_bg = model_bg.to(device)
@@ -155,7 +155,7 @@ class Renderer:
           #model.bg = GaussianParamsOthers(means, quats, scales, colors, opacities)
         do_my_trick=True
         if do_my_trick:
-           model.bg.params['scales'] = 0.87 * model.bg.params['scales']
+           model.bg.params['scales'] = 0.97 * model.bg.params['scales']
 
         for k, v in model.bg.params.items():
            print(k, v.mean())

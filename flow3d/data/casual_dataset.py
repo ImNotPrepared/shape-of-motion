@@ -1017,7 +1017,7 @@ class StatDataset(Dataset):
             depth = self.get_depth(query_idx).float()
             feats = self.get_feat(query_idx).float()
             bg_mask = torch.ones_like(depth)# self.get_mask(query_idx) < 0
-            bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
+            bool_mask = (bg_mask * (depth > 1e-7)).to(torch.bool)
             bool_mask = (bg_mask).to(torch.bool)
             w2c = self.w2cs[query_idx]
             K = self.Ks[query_idx]

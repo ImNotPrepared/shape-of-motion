@@ -225,7 +225,7 @@ def init_bg_from_depth(
     # scale.
     dists, _ = knn(points.xyz, 3)
     dists = torch.from_numpy(dists)
-    bg_scales = dists.mean(dim=-1, keepdim=True) / 4.7
+    bg_scales = dists.mean(dim=-1, keepdim=True) #/ 4.7
     bkdg_scales = torch.log(bg_scales.repeat(1, 3))
 
     bg_means = points.xyz
