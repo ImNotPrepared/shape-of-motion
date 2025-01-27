@@ -225,7 +225,9 @@ def init_bg_from_depth(
     # scale.
     dists, _ = knn(points.xyz, 3)
     dists = torch.from_numpy(dists)
-    bg_scales = dists.mean(dim=-1, keepdim=True) #/ 4.7
+    bg_scales = (dists.mean(dim=-1, keepdim=True) + 1e-7 ) / 2.1
+
+
     bkdg_scales = torch.log(bg_scales.repeat(1, 3))
 
     bg_means = points.xyz
@@ -242,6 +244,17 @@ def init_bg_from_depth(
     bkdg_feats = (points.feats)
     bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
 
+    '''num_repeats = 7
+    bg_means = bg_means.repeat(num_repeats, 1)
+    bg_quats = bg_quats.repeat(num_repeats, 1)
+    bkdg_scales = bkdg_scales.repeat(num_repeats, 1)
+    bkdg_colors = bkdg_colors.repeat(num_repeats, 1)
+    bg_opacities = bg_opacities.repeat(num_repeats)
+    bkdg_feats = bkdg_feats.repeat(num_repeats, 1)
+
+    noise_std = 0.007  # Adjust as needed
+    noise = torch.randn_like(bg_means) * noise_std
+    bg_means += noise'''
 
     gaussians = GaussianParams(
         bg_means,

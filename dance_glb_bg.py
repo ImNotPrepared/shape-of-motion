@@ -255,6 +255,7 @@ def initialize_and_checkpoint_model(
     assert bg_points.check_sizes()
 
     bg_params = init_bg_from_depth(bg_points)
+    
 
   
     bg_params = bg_params.to(device)

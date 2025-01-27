@@ -34,7 +34,8 @@ def main(cfg: RenderConfig):
 
     #init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'    
     #init_pt_path = '/data3/zihanwa3/Capstone-DSR/Appendix/Depth-Anything-V2/da_pt_cld_4_Stat.npz'
-    init_pt_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'  
+    init_pt_path= '/data3/zihanwa3/Capstone-DSR/monst3r_train/my_data_2/Dynamic3DGaussians/output/official/basketball/params.npz'
+    # '/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz'  
     # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/patched_stat_imgs/pc.npz
     assert os.path.exists(ckpt_path)
     renderer = Renderer.init_from_pc_checkpoint(

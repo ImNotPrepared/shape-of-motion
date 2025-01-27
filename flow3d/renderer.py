@@ -135,6 +135,7 @@ class Renderer:
         
         '''
         ckpt_path='/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/output/1_conf_bg_new_clip/cmu_bike/params_iter_10000.npz'
+
         params = dict(np.load(ckpt_path, allow_pickle=True))
 
         params = {k: torch.tensor(params[k]).cuda().float().requires_grad_(True) for k in params.keys()}
@@ -146,16 +147,19 @@ class Renderer:
 
 
         if model.fg is not None:
-          path = 'resultsbike_bg_only/test773/checkpoints/last.ckpt'
+          path = 'resultsbike_bg_only/clean_1_no_feat_nodensify/checkpoints/last.ckpt'
+          #path =         ckpt_path='/data3/zihanwa3/Capstone-DSR/monst3r_train/my_data_2/Dynamic3DGaussians/output/official/basketball/params.npz'
           state_dict =  torch.load(path)["model"]
           model_bg = SceneModel.init_from_state_dict(state_dict)
           model_bg = model_bg.to(device)
           model.bg = model_bg.bg
+        model.bg.feats = None 
+        
 
           #model.bg = GaussianParamsOthers(means, quats, scales, colors, opacities)
         do_my_trick=True
         if do_my_trick:
-           model.bg.params['scales'] = 0.97 * model.bg.params['scales']
+           model.bg.params['scales'] = 0.93 * model.bg.params['scales']
 
         for k, v in model.bg.params.items():
            print(k, v.mean())
@@ -202,13 +206,16 @@ class Renderer:
           # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
         # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
 
-
-
-
-        self.seq_name='single_person'
+        self.seq_name='panoptic'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
+
+        elif self.seq_name == 'panoptic':
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds_test_tennis/combined_pointcloud_{3*t}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_panoptic_dense_check_tennis/dumon_depth/{t}/pc.npz'
+          pc = np.load(pc_dir)#["data"]
+
 
         elif self.seq_name == 'single_person':
           #t = t * 3 /data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike
@@ -220,10 +227,6 @@ class Renderer:
 
           print(new_pt_cld.shape, new_pt_cld_.shape)
           pc = np.concatenate((new_pt_cld, new_pt_cld_), axis=0)
-
-
-        
-
         elif self.seq_name == 'moving_cam':
           #t = t * 3
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/BIKE_no_preset/{t}/conf_pc.npz'
@@ -290,6 +293,14 @@ class Renderer:
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_dance/duster_depth_test/{t+1477}/pc.npz'
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds/combined_pointcloud_{t+1477}.npy'
           pc = np.load(pc_dir)["data"] 
+
+        elif self.seq_name == 'moge':
+          #/data3/zihanwa3/Capstone-DSR/monst3r/allcat/10/pc.npz
+          if (3*t+183)>296:
+            t=t-1
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/moge_pc/moge_combined_pointcloud_{3*t+183}.npy'
+          pc = np.load(pc_dir)
+
 
 
         pc = torch.tensor(pc).cuda()[:, :6].float()
@@ -478,7 +489,7 @@ class Renderer:
         #fg_only=True
         ## torch.Size([1, 1029, 2048, 32]) -> torch.Size([1029, 2048, 3])
         img = self.model.render(t, w2c[None], K[None], img_wh, )["img"][0]
-        feat = self.model.render(t, w2c[None], K[None], img_wh, )["feat"][0]
+        # feat = self.model.render(t, w2c[None], K[None], img_wh, )["feat"][0]
 
         
         #[0]
