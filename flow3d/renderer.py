@@ -212,7 +212,7 @@ class Renderer:
           pc = np.load(pc_dir)["data"]
 
         elif self.seq_name == 'panoptic':
-          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds_test_tennis/combined_pointcloud_{3*t}.npy'
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/monst3r/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_panoptic_dense_check_tennis/dumon_depth/{t}/pc.npz'
           pc = np.load(pc_dir)#["data"]
 

@@ -246,7 +246,16 @@ def main(cfgs: List[TrainConfig]):
         interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
         all_interpolated_c2ws.extend(interpolated)
 
+    all_interpolated_c2ws = []
 
+    t = 0
+    ### 1, 3 to 22 
+    ## NECESSARY: 1 3 8 23  [1, 3, 8, 23]
+    ### replaceable: 3/13  21/23 choce one 
+    for c in [2, 4, 9, 26]:
+        all_interpolated_c2ws.append((md['w2c'][t][c]))
+    all_interpolated_c2ws = np.array(all_interpolated_c2ws)
+    
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
         pbar := tqdm(
@@ -583,5 +592,11 @@ if __name__ == "__main__":
           )
           for i in range(4)
       ]     
+
+      ### panoptic testing data:
+      # real: [1, 3, 8, 13, 19, 21] (start with 0)
+      # test_real [0, 10, 15, 30]
+      # amend_wrong: [0, 2, 7, 11, 16, 18]
+      # amend_correct: [2, 4, 9, 11, 16, 18]
       # /data3/zihanwa3/Capstone-DSR/raw_data/unc_basketball_03-16-23_01_18/trajectory/Dy_train_meta.json
     main(configs)

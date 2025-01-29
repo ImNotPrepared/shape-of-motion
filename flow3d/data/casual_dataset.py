@@ -194,8 +194,6 @@ class CasualDataset(BaseDataset):
               df = json.load(f)
           # 0 10 15 30
           cam_ids = [3, 21, 23, 25]
-          # cam_ids = [2, 18, 20, 22]
-
           for i, kv in enumerate(cam_ids):
               if kv > 30:
                   k = 4
@@ -255,7 +253,7 @@ class CasualDataset(BaseDataset):
           # intrinsics = df[['image_width','image_height','intrinsics_0','intrinsics_1','intrinsics_2','intrinsics_3']].values.tolist()
           #       3.         [1764.426025, 1764.426025, 1920.0, 1080.0],
 
-          poses=(w2cs[:]) # np.linalg.inv
+          poses=(w2cs[:]) # 
           intrinsics= intrinsics_list[:]
 
           def convert_to_matrix(pose):
@@ -787,7 +785,13 @@ class CasualDataset(BaseDataset):
           cam_id = cheaty_way.split('cam')[-1]
           path = path.replace(f'softball_undist_cam03', '')
           #print(self.frame_names[index], 'frame_names')
-          new_path  = os.path.join(new_path, str(int(self.frame_names[index])), f'conf_bg_depth_{int(cam_id)}.npy')
+          if int(cam_id) == 3:
+            cam_id = 2
+          else:
+            cam_id = int(cam_id) - 3
+
+
+          new_path  = os.path.join(new_path, str(int(self.frame_names[index])), f'conf_bg_depth_{cam_id}.npy')
           path = new_path
 
           #path = '/data3/zihanwa3/Capstone-DSR/Processing_panoptic_tennis/jono_depth'
