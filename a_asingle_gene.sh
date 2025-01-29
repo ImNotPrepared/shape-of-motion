@@ -6,4 +6,6 @@ EXP=$1
 # _iiith_cooking_123_2
 
 # _nus_cpr_08_1
-python dance_glb.py --seq_name '_indiana_music_11_2' --depth_type 'modest' --exp "$EXP"
+
+###  modest 
+python dance_glb.py --seq_name '_panoptic_softball' --depth_type 'panoptic_gt' --exp "$EXP"

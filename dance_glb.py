@@ -225,7 +225,12 @@ def main(cfgs: List[TrainConfig]):
         for i, (view, val_img_dataset) in enumerate(zip(train_video_views, val_img_datases))
     ]
     import json
-    md = json.load(open(cfg.test_w2cs, 'r'))
+    # /data3/zihanwa3/Capstone-DSR/Processing_panoptic_tennis
+    try: 
+        md = json.load(open(cfg.test_w2cs, 'r'))
+    except:
+        md = json.load(open(cfg.test_w2cs.replace('raw_data/', 'Processing_'), 'r'))
+        
     c2ws = []
     for c in range(1, 6):
       if c==5:
@@ -443,7 +448,8 @@ def init_model_from_unified_tracks(
         bg_colors_list = []
         bg_feats_list = []
 
-        for train_dataset in train_datasets:
+        for item, train_dataset in enumerate(train_datasets):
+            
             bg_points, bg_normals, bg_colors, bg_feats = train_dataset.get_bkgd_points(num_bg)
             bg_points_list.append(bg_points)
             bg_normals_list.append(bg_normals)
@@ -551,11 +557,17 @@ if __name__ == "__main__":
           for i in range(4)
       ]
     else:
+      cam_dict = {
+        '1':3,
+        '2':21,
+        '3':23,
+        '4':25,
+      }
       configs = [
           TrainBikeConfig(
               work_dir=work_dir,
               data=CustomDataConfig(
-                  seq_name=f"{category}_undist_cam0{i+1}",
+                  seq_name=f"{category}_undist_cam{cam_dict[str(i+1)]:02d}",
                   root_dir="/data3/zihanwa3/Capstone-DSR/shape-of-motion/data",
                   video_name=seq_name,
                   depth_type=depth_type,
