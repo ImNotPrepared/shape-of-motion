@@ -53,6 +53,7 @@ class Trainer:
         if hasattr(model, 'num_frames'):
             self.num_frames = model.num_frames
         else:
+            self.num_frames = model.num_frames = 50
             print("num_frames is not an attribute of the model.")
 
 
@@ -688,7 +689,7 @@ class Trainer:
 
 
         target_mean_list = target_means.split(N)
-
+        num_frames = self.model.num_frames
         loss = 0.0
 
         bg_colors = []

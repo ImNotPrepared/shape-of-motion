@@ -18,8 +18,7 @@ class SceneModel(nn.Module):
         bg_params: GaussianParams | None = None,
     ):
         super().__init__()
-        if motion_bases:
-          self.num_frames = motion_bases.num_frames
+        self.num_frames = motion_bases.num_frames
         self.fg = fg_params
         self.motion_bases = motion_bases
         self.bg = bg_params
@@ -42,7 +41,7 @@ class SceneModel(nn.Module):
 
     @property
     def num_fg_gaussians(self) -> int:
-        return self.bg.num_gaussians if self.fg is not None else 0
+        return self.fg.num_gaussians
 
     @property
     def num_motion_bases(self) -> int:
@@ -149,24 +148,17 @@ class SceneModel(nn.Module):
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix=""):
-        fg = None
-        motion_bases=None
-
-        if any("fg." in k for k in state_dict):
-          fg = GaussianParams.init_from_state_dict(
-              state_dict, prefix=f"{prefix}fg.params."
-          )
-          motion_bases = MotionBases.init_from_state_dict(
-              state_dict, prefix=f"{prefix}motion_bases.params."
-          )
+        fg = GaussianParams.init_from_state_dict(
+            state_dict, prefix=f"{prefix}fg.params."
+        )
         bg = None
         if any("bg." in k for k in state_dict):
             bg = GaussianParams.init_from_state_dict(
                 state_dict, prefix=f"{prefix}bg.params."
             )
-
-
-
+        motion_bases = MotionBases.init_from_state_dict(
+            state_dict, prefix=f"{prefix}motion_bases.params."
+        )
         Ks = state_dict[f"{prefix}Ks"]
         w2cs = state_dict[f"{prefix}w2cs"]
         return SceneModel(Ks, w2cs, fg, motion_bases, bg)
@@ -523,159 +515,6 @@ class SceneModel(nn.Module):
                 dim=-1,
             )
             ds_expected["tracks_3d"] = d_track
-
-        assert colors_override.shape[-1] == sum(ds_expected.values())
-        assert bg_color.shape[-1] == sum(ds_expected.values())
-        # print('color-feat shape_1', fg_only, colors_override.shape, feats_override.shape)
-        if return_depth:
-            mode = "RGB+ED"
-            ds_expected["depth"] = 1
-
-        if filter_mask is not None:
-            assert filter_mask.shape == (N,)
-            means = means[filter_mask]
-            quats = quats[filter_mask]
-            scales = scales[filter_mask]
-            opacities = opacities[filter_mask]
-            colors_override = colors_override[filter_mask]
-            feats_override = feats_override[filter_mask]
-
-        # print('color-feat shape_2', colors_override.shape, means.shape)
-        # shape_2 torch.Size([181779, 15])   3 
-        render_colors, alphas, info = rasterization(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=colors_override,
-            backgrounds=bg_color,
-            viewmats=w2cs,  # [C, 4, 4]
-            Ks=Ks,  # [C, 3, 3]
-            width=W,
-            height=H,
-            packed=False,
-            render_mode=mode,
-        )
-        # print(bg_color.shape)
-        ## colors: torch.Size([1, 288, 512, 16]) [4*(3+1)]        torch.Size([181670, 15])
-        ### 
-        # print('color-feat shape', render_colors.shape, colors_override.shape, feats_override.shape) 
-        # Populate the current data for adaptive gaussian control.
-        if self.training and info["means2d"].requires_grad:
-            self._current_xys = info["means2d"]
-            self._current_radii = info["radii"]
-            self._current_img_wh = img_wh
-            # We want to be able to access to xys' gradients later in a
-            # torch.no_grad context.
-            self._current_xys.retain_grad()
-
-        # print('mode+ds',  mode, sum(ds_expected.values()), B)
-        assert render_colors.shape[-1] == sum(ds_expected.values())
-        outputs = torch.split(render_colors, list(ds_expected.values()), dim=-1) ### it is a cated [3, 1]
-        # print(len(outputs), outputs[0].shape, outputs[1].shape, outputs[2].shape,)
-        out_dict = {}
-        for i, (name, dim) in enumerate(ds_expected.items()):
-            x = outputs[i]
-            '''
-            img torch.Size([1, 288, 512, 3])
-            tracks_3d torch.Size([1, 288, 512, 12])
-            depth torch.Size([1, 288, 512, 1])
-            print(name, x.shape)
-            '''
-            assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
-            if name == "tracks_3d":
-                x = x.reshape(C, H, W, B, 3)
-            out_dict[name] = x
-
-        bg_feat = torch.ones((1, 32), device=device)
-        render_feats, _, _ = rasterization(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=feats_override,
-            backgrounds=bg_feat,
-            viewmats=w2cs,  # [C, 4, 4]
-            Ks=Ks,  # [C, 3, 3]
-            width=W,
-            height=H,
-            packed=False,
-            render_mode='RGB',
-        )
-        ds_extra_expected = {"feat": 32}    
-
-        outputs_feats = render_feats #torch.split(render_feats, list(ds_extra_expected.values()), dim=-1)
-        # print(render_feats.shape, render_colors.shape, 'ssssshape')
-        # torch.Size([1, 288, 512, 32]) torch.Size([1, 288, 512, 16]) ssssshape
-        for i, (name, dim) in enumerate(ds_extra_expected.items()):
-            x = outputs_feats
-            assert x.shape[-1] == dim, f"{x.shape[-1]=} != {dim=}"
-            # print(x.shape)
-            # torch.Size([1, 288, 512, 32])
-            out_dict[name] = x
-
-        out_dict["acc"] = alphas
-        return out_dict
-    
-    def render_stat_bg(
-        self,
-        # A single time instance for view rendering.
-        t: int | None,
-        w2cs: torch.Tensor,  # (C, 4, 4)
-        Ks: torch.Tensor,  # (C, 3, 3)
-        img_wh: tuple[int, int],
-        # Multiple time instances for track rendering: (B,).
-        target_ts: torch.Tensor | None = None,  # (B)
-        target_w2cs: torch.Tensor | None = None,  # (B, 4, 4)
-        bg_color: torch.Tensor | float = 1.0,
-        colors_override: torch.Tensor | None = None,
-        means: torch.Tensor | None = None,
-        quats: torch.Tensor | None = None,
-        target_means: torch.Tensor | None = None,
-        return_color: bool = True,
-        return_feat: bool = True,
-        return_depth: bool = False,
-        return_mask: bool = False,
-        fg_only: bool = False,
-        filter_mask: torch.Tensor | None = None,
-        feats_override: torch.Tensor | None = None,
-    ) -> dict:
-        device = w2cs.device
-        C = w2cs.shape[0]
-
-        W, H = img_wh
-        pose_fnc = self.compute_poses_fg if fg_only else self.compute_poses_all
-        N = self.num_gaussians
-        means, quats = self.compute_poses_bg()
-        if colors_override is None:
-            if return_color:
-                colors_override = (
-                    self.bg.get_colors()
-                )
-            else:
-                colors_override = torch.zeros(N, 0, device=device)
-
-        if feats_override is None:
-            if return_feat:
-                feats_override = (
-                    self.bg.get_feats() 
-                )
-            else:
-                feats_override = torch.zeros(N, 0, device=device)
-        #print(colors_override.shape, feats_override.shape)
-        D = colors_override.shape[-1]
-
-        scales = self.bg.get_scales() #if fg_only else self.get_scales_all()
-        opacities = self.bg.get_opacities() #if fg_only else self.get_opacities_all()
-
-        if isinstance(bg_color, float):
-            bg_color = torch.full((C, D), bg_color, device=device)
-        assert isinstance(bg_color, torch.Tensor)
-
-        mode = "RGB"
-        ds_expected = {"img": D}
-
-        B = 0
 
         assert colors_override.shape[-1] == sum(ds_expected.values())
         assert bg_color.shape[-1] == sum(ds_expected.values())

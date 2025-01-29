@@ -80,7 +80,7 @@ class TrainBikeConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 21_000
+    num_fg: int = 11_000
     num_bg: int = 14_000
     num_motion_bases: int = 28
     num_epochs: int = 500
