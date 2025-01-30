@@ -8,4 +8,4 @@ EXP=$1
 # _nus_cpr_08_1
 
 ###  modest 
-python dance_glb.py --seq_name '_panoptic_softball' --depth_type 'panoptic_gt' --exp "$EXP"
+python dance_glb.py --seq_name '_panoptic_softball' --depth_type 'da2' --exp "$EXP"

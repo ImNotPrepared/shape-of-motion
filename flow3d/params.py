@@ -53,6 +53,7 @@ class GaussianParams(nn.Module):
     @staticmethod
     def init_from_state_dict(state_dict, prefix="params."):
         req_keys = ["means", "quats", "scales", "colors", "opacities"]
+        print(state_dict.keys())
         assert all(f"{prefix}{k}" in state_dict for k in req_keys)
         args = {
             "motion_coefs": None,

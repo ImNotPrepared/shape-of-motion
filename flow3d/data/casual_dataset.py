@@ -746,7 +746,7 @@ class CasualDataset(BaseDataset):
         if self.depth_type == 'modest':
            depth = self.load_modest_depth(index)
         elif self.depth_type == 'da2':
-           depth = self.load_da2_depth(index)
+           depth = self.load_org_depth(index)
         elif self.depth_type == 'dust3r':
            depth = self.load_duster_depth(index)       
         elif self.depth_type == 'monst3r':

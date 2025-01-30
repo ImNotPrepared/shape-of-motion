@@ -250,9 +250,9 @@ def main(cfgs: List[TrainConfig]):
 
     t = 0
     ### 1, 3 to 22 
-    ## NECESSARY: 1 3 8 23  [1, 3, 8, 23]
+    ## NECESSARY: 0 - 》 1 3 8 23  [1, 3, 8, 23]
     ### replaceable: 3/13  21/23 choce one 
-    for c in [2, 4, 9, 26]:
+    for c in [4, 7, 9, 11]:
         all_interpolated_c2ws.append((md['w2c'][t][c]))
     all_interpolated_c2ws = np.array(all_interpolated_c2ws)
     
