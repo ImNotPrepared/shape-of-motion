@@ -120,9 +120,11 @@ class CasualDataset(BaseDataset):
 
         self.feat_dir = f"{root_dir}/{image_type}/{res}/{seq_name}"
         self.feat_ext = os.path.splitext(os.listdir(self.feat_dir)[0])[1]
-
+        self.tgt_name = seq_name.split('_')[0]
         # category = {video_name.split("_")[2]}
-        path = f'/data3/zihanwa3/Capstone-DSR/Processing{video_name}/undist_cam01/*.jpg'
+        
+        # path = f'/data3/zihanwa3/Capstone-DSR/Processing{video_name}/undist_cam01/*.jpg'
+        path = f'data/images/{self.tgt_name}_undist_cam01/*.jpg'
         paths = glob.glob(path)
         sorted_paths = sorted(paths, key=lambda x: int(os.path.basename(x).split('.')[0]))
         try:
@@ -140,6 +142,8 @@ class CasualDataset(BaseDataset):
           '_dance': [1477, 1778, 3],
           '': [273, 294, 1],
         }
+
+        print(self.min_, self.max_)
         self.glb_first_indx = self.min_ #self.hard_indx_dict[self.video_name][0]
         self.glb_last_indx = self.max_ #self.hard_indx_dict[self.video_name][1]
         self.glb_step = 3 #self.hard_indx_dict[self.video_name][2]
@@ -163,7 +167,7 @@ class CasualDataset(BaseDataset):
           self.frame_names = frame_names[start:end:self.glb_step][:-1]
         elif self.video_name=='_dance':
           self.frame_names = frame_names[start:end:self.glb_step]#[:-1]
-        elif self.video_name=='':
+        elif self.video_name=='' or 'soccer' in self.video_name:
           self.frame_names = frame_names[start:end:self.glb_step][:-1]
         else:
           self.frame_names = frame_names[start:end:self.glb_step]
@@ -179,6 +183,7 @@ class CasualDataset(BaseDataset):
 
 
         self.debug=False
+
 
         def load_known_cameras_panoptic(
             path: str, H: int, W: int, noise: bool
@@ -482,11 +487,6 @@ class CasualDataset(BaseDataset):
             ),
             dim=-1,
         )
-
-        ###  start 
-        #if use_kf_tstamps:
-        #    query_idcs = self.keyframe_idcs.tolist()
-        #else:
         num_query_frames = self.num_frames // stride
         query_endpts = torch.linspace(start, end, num_query_frames + 1)
         query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
@@ -581,12 +581,20 @@ class CasualDataset(BaseDataset):
         target_idcs = list(range(start, end, step))
 
         masks = torch.stack([self.get_mask(i) for i in target_idcs], dim=0)
-        fg_masks = (masks == 1).float()
+
         depths = torch.stack([self.get_depth(i) for i in target_idcs], dim=0)
         inv_Ks = torch.linalg.inv(self.Ks[target_idcs])
         c2ws = torch.linalg.inv(self.w2cs[target_idcs])
 
+        depths_valid_mask = (depths > 0).bool()
+
+        # Ensure fg_masks is also a boolean tensor
+        fg_masks = (masks == 1).float()
+        fg_masks = fg_masks.bool()
+        final_masks = (fg_masks | depths_valid_mask).float()
+
         num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
+
         cur_num = 0
         tracks_all_queries = []
         for q_idx in query_idcs:
@@ -607,7 +615,7 @@ class CasualDataset(BaseDataset):
 
 
             tracks_tuple = get_tracks_3d_for_query_frame(
-                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws, feat
+                tidx, img, tracks_2d, depths, final_masks, inv_Ks, c2ws, feat
             )
   
             tracks_all_queries.append(tracks_tuple)
@@ -745,6 +753,8 @@ class CasualDataset(BaseDataset):
         #  load_da2_depth load_duster_depth load_org_depth
         if self.depth_type == 'modest':
            depth = self.load_modest_depth(index)
+        elif self.depth_type == 'moge':
+           depth = self.load_moge_depth(index)
         elif self.depth_type == 'da2':
            depth = self.load_org_depth(index)
         elif self.depth_type == 'dust3r':
@@ -842,7 +852,6 @@ class CasualDataset(BaseDataset):
 
     def load_monster_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
-        #print(self.depth_dir, path, int(self.frame_names[index]))
         to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
         if self.video_name == '_dance':
           new_path =  f'/data3/zihanwa3/Capstone-DSR/monst3r/aligned_preset_k/'
@@ -861,6 +870,27 @@ class CasualDataset(BaseDataset):
         depth = input_tensor.squeeze(0).squeeze(0) 
         return depth
     
+
+
+    def load_moge_depth(self, index) -> torch.Tensor:
+        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
+        #print(self.depth_dir, path, int(self.frame_names[index]))
+        to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
+
+        new_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/_aligned_preset_k_new_clean_'
+        path = path.replace('toy_512_', 'undist_cam')
+    
+        path = path.replace(to_replace, new_path)
+        path = path.replace('disp', 'frame')
+        path = path.replace(self.tgt_name+'_', self.tgt_name+'/')
+        depth_map = np.load(path)
+        # depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float()
+        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+
+        # If you want to remove the added dimensions
+        depth = input_tensor.squeeze(0).squeeze(0) 
+        return depth
 
     def load_modest_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"

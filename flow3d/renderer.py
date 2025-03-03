@@ -29,7 +29,7 @@ class Renderer:
 
         self.pc_dict = {
           'bike': ['/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/', 111],
-          'dance': ['/data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/', 100],
+          'dance': ['/data3/zihanwa3/Capstone-DSR/Processing_dance/dinov2features/', 222],
         }
 
         self.data_path = self.pc_dict[seq_name][0]
@@ -103,30 +103,56 @@ class Renderer:
         model = SceneModel.init_from_state_dict(state_dict)
         model = model.to(device)
 
-        # print('CAUSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS_DOTHETRICKS')
-        do_my_trick=False
+
+        do_my_trick=True
         if do_my_trick:
-           model.bg.params['scales'] = 0.83 * model.bg.params['scales']
-        '''
-        def get_scales(self) -> torch.Tensor:
-          return self.scale_activation(self.params["scales"])
-        
-        '''
-        '''ckpt_path=f'/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/old_output/4.9M/cmu_bike/params_iter_5000.npz'
-        params = dict(np.load(ckpt_path, allow_pickle=True))
+           model.bg.params['scales'] = 0.97 * model.bg.params['scales']
 
-        for k, v in model.bg.params.items():
-           print(k, v.max())
-        params = {k: torch.tensor(params[k]).cuda().float().requires_grad_(True) for k in params.keys()}
-        means = params['means3D']#[0]
-        quats = params['unnorm_rotations']#[0]
-        scales = params['log_scales']
-        colors = params['rgb_colors'] * 10#* 255#[0]
-        opacities = params['logit_opacities'][:, 0]
 
-        model.bg = GaussianParams(means, quats, scales, colors, opacities)
-        for k, v in model.bg.params.items():
-           print(k, v.max())'''
+        '''
+        def initialize_new_params(new_pt_cld):
+            num_pts = new_pt_cld.shape[0]
+            means3D = torch.tensor(new_pt_cld[:, :3], dtype=torch.float, device="cuda")  # Convert to torch tensor, shape [num_gaussians, 3]
+            unnorm_rots = torch.tensor(np.tile([1, 0, 0, 0], (num_pts, 1)), dtype=torch.float, device="cuda")  # [num_gaussians, 4]
+            logit_opacities = torch.zeros((num_pts), dtype=torch.float, device="cuda")  # [num_gaussians, 1]
+            
+            sq_dist, _ = o3d_knn(new_pt_cld[:, :3], 3)  # Assuming o3d_knn returns a numpy array
+            mean3_sq_dist = np.clip(sq_dist.mean(-1), a_min=0.0000001, a_max=None)
+            
+            seg = np.ones((num_pts))
+            seg_colors_np = np.stack((seg, np.zeros_like(seg), 1 - seg), -1)  # [num_pts, 3]
+
+            # Convert everything to torch tensors
+            params = {
+                'means3D': means3D,  # Already converted
+                'rgb_colors': torch.tensor(new_pt_cld[:, 3:6], dtype=torch.float, device="cuda"),  # [num_gaussians, 3]
+                'unnorm_rotations': unnorm_rots,  # Already converted
+                'seg_colors': torch.tensor(seg_colors_np, dtype=torch.float, device="cuda"),  # [num_pts, 3]
+                'logit_opacities': logit_opacities,  # Already converted
+                'log_scales': torch.tensor(np.tile(np.log(np.sqrt(mean3_sq_dist))[..., None], (1, 3)), dtype=torch.float, device="cuda")  # [num_gaussians, 3]
+            }
+
+            return params
+        params =
+      
+        bg_means = params['means3D']#[0]
+        bg_quats = params['unnorm_rotations']#[0]
+        bkdg_scales = params['log_scales']
+        bkdg_colors = params['rgb_colors'] #* 255#[0]
+        bg_opacities = params['logit_opacities'][:, 0]
+        bg_scene_center = bg_means.mean(0)
+        bkdg_feats=torch.ones(bg_means.shape[0], 32)
+
+        gaussians = GaussianParams(
+            bg_means,
+            bg_quats,
+            bkdg_scales,
+            bkdg_colors,
+            bg_opacities,
+        )
+
+        model.bg = Ggaussians
+        '''
         renderer = Renderer(model, device, *args, **kwargs)
 
            
@@ -164,20 +190,36 @@ class Renderer:
             if not self.viewer._canonical_checkbox.value
             else None
         )
-        # [t]
-        # Assuming self.pc is of shape [N, 6] with XYZRGB
-        #try:  
-          # pc = torch.tensor(self.pc[str(t)]).cuda()[:, :6].float()
-        # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new/{t+183}/fg_pc.npz'
 
-
-
-
-        self.seq_name='single_person'
+        self.seq_name='see_moge'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
+        elif self.seq_name == 'av':
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/AV-proj/street-gaussians-ns/results/baseline_pc/point_cloud_{t}.npy'
+          
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/AV-proj/street-gaussians-ns/results/filtered_pc/point_cloud_{t}.npy'
+          pc = np.load(pc_dir)
+        
+        elif self.seq_name == 'see_moge':
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_unc_basketball_03-16-23_01_18/dust_depth/{3*t+210}/pc.npz'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_basketball/combined_pointcloud_{3*t+210}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_cooking/combined_pointcloud_{3*t+9000}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_music/combined_pointcloud_{3*t+2820}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_cpr/combined_pointcloud_{3*t+720}.npy'
 
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_cmu_soccer_07_3/dust_depth/{3*t+10050}/pc.npz'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_uniandes_ball_002_17/dust_depth/{3*t+437}/pc.npz'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_indiana_music_14_4/dust_depth/{3*t+1621}/pc.npz'
+
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_piano/combined_pointcloud_{3*t+1621}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_ball/combined_pointcloud_{3*t+437}.npy'
+
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_soccer/combined_pointcloud_{3*t+10070}.npy'
+
+          #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
+          pc = np.load(pc_dir)# ['data']
         elif self.seq_name == 'single_person':
           #t = t * 3 /data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike
           path = '/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/init_pt_cld.npz'

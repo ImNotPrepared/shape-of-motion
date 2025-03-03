@@ -57,7 +57,7 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 14_000
+    num_fg: int = 0
     num_bg: int = 14_000
     num_motion_bases: int = 21
     num_epochs: int = 500
@@ -80,9 +80,9 @@ class TrainBikeConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 11_000
+    num_fg: int = 21_000
     num_bg: int = 14_000
-    num_motion_bases: int = 27
+    num_motion_bases: int = 28
     num_epochs: int = 500
     port: int | None = None
     vis_debug: bool = False 
@@ -136,6 +136,36 @@ def interpolate_cameras(c2w1, c2w2, alpha):
     interpolated_c2ws.append(c2w_interp)
     
     return interpolated_c2ws
+def mask_overlap_ratio(masks1, masks2):
+    """
+    Compute Overlapping Ratio between each pair of masks in masks1 and masks2.
+    
+    Args:
+        masks1 (torch.Tensor): Tensor of shape [N, H, W], binary masks.
+        masks2 (torch.Tensor): Tensor of shape [M, H, W], binary masks.
+
+    Returns:
+        overlap_ratio (torch.Tensor): Overlap ratio matrix of shape [N, M] where each entry is
+                                      (intersection area / area of masks1[i]).
+    """
+    masks1 = masks1.bool()
+    masks2 = masks2.bool()
+    N, H, W = masks1.shape
+    M = masks2.shape[0]
+
+    # Flatten masks for easier computation
+    masks1 = masks1.view(N, -1)  # [N, H*W]
+    masks2 = masks2.view(M, -1)  # [M, H*W]
+
+    # Compute intersection
+    intersection = (masks1.unsqueeze(1) & masks2.unsqueeze(0)).sum(dim=-1).float()  # [N, M]
+
+    # Compute the area of each mask in masks1
+    area_masks1 = masks1.sum(dim=-1, keepdim=True).float()  # [N, 1]
+
+    # Avoid division by zero
+    overlap_ratio = intersection / (area_masks1 + 1e-6)  # [N, M]
+    return overlap_ratio
 
 def main(cfgs: List[TrainConfig]):
     train_list = []
@@ -152,10 +182,11 @@ def main(cfgs: List[TrainConfig]):
             yaml.dump(asdict(cfg), f, default_flow_style=False)
 
         # if checkpoint exists
+        print(len(train_dataset))
         ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
         train_loader = DataLoader(
             train_dataset,
-            batch_size=cfg.batch_size,
+            batch_size=len(train_dataset),
             num_workers=cfg.num_dl_workers,
             persistent_workers=True,
             collate_fn=BaseDataset.train_collate_fn,
@@ -163,9 +194,18 @@ def main(cfgs: List[TrainConfig]):
         
         train_indices = cfg.train_indices
 
+
+        scores = []
+        for first_batch in train_loader:
+          first_batch = first_batch['masks']
+          print(first_batch.shape)
+          for index in range(len(first_batch)-1):
+            scores.append(mask_overlap_ratio(first_batch[index][None, ...], first_batch[index+1][None, ...]))
+          print(min(scores))
+          
         # val_img_datases
 
-        train_list.append((train_video_view, train_loader, train_dataset, train_video_view))
+        # train_list.append((train_video_view, train_loader, train_dataset, train_video_view))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -178,18 +218,9 @@ def main(cfgs: List[TrainConfig]):
 
     train_dataset = [train[2] for train in train_list]
     train_datasets = [train_dataset[i] for i in train_indices]
-    print(len(train_dataset), len(train_datasets))
+    print('wtf'*50, len(train_dataset), len(train_datasets))
 
-    syn_dataset = SynchornizedDataset(train_datasets)
-    syn_dataloader = DataLoader(
-            syn_dataset,
-            batch_size=cfg.batch_size,
-            num_workers=cfg.num_dl_workers,
-            persistent_workers=True,
-            collate_fn=BaseDataset.train_collate_fn_sync,
-        )
-    
-    val_img_datases = [train[3] for train in train_list]
+
 
     # Initialize model
     initialize_and_checkpoint_model(
@@ -212,18 +243,6 @@ def main(cfgs: List[TrainConfig]):
         port=cfgs[0].port,
     )
 
-    validators = [
-        Validator(
-            model=trainer.model,
-            device=device,
-            train_loader=DataLoader(view, batch_size=1),
-            val_img_loader=(
-                DataLoader(val_img_dataset, batch_size=100) 
-            ),
-            save_dir=os.path.join(cfgs[0].work_dir, f'cam_{i+1}'),
-        )
-        for i, (view, val_img_dataset) in enumerate(zip(train_video_views, val_img_datases))
-    ]
     import json
     # /data3/zihanwa3/Capstone-DSR/Processing_panoptic_tennis
     try: 
@@ -246,15 +265,15 @@ def main(cfgs: List[TrainConfig]):
         interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
         all_interpolated_c2ws.extend(interpolated)
 
-    #all_interpolated_c2ws = []
+    all_interpolated_c2ws = []
 
-    #t = 0
+    t = 0
     ### 1, 3 to 22 
     ## NECESSARY: 0 - 》 1 3 8 23  [1, 3, 8, 23]
     ### replaceable: 3/13  21/23 choce one 
-    #for c in [8, 9, 10, 11]:
-    #    all_interpolated_c2ws.append((md['w2c'][t][c]))
-    #all_interpolated_c2ws = np.array(all_interpolated_c2ws)
+    for c in [8, 9, 10, 11]:
+        all_interpolated_c2ws.append((md['w2c'][t][c]))
+    all_interpolated_c2ws = np.array(all_interpolated_c2ws)
     
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
@@ -264,8 +283,14 @@ def main(cfgs: List[TrainConfig]):
             total=cfgs[0].num_epochs,
         )
     ):
-        # loss = 0
+        loss = 0
+
         trainer.set_epoch(epoch)
+
+        # Zip the loaders to load one batch from each loader at each step
+        #for batches in syn_dataloader:
+        #    batches = to_device(batches, device)
+
         for batches in zip(*train_loaders):
             batches = [to_device(batch, device) for batch in batches]
             loss = trainer.train_step(batches)
@@ -275,7 +300,7 @@ def main(cfgs: List[TrainConfig]):
             pbar.set_description(f"Loss: {loss:.6f}")
 
             
-        if (epoch % cfgs[0].save_videos_every == 0) or (
+        if (epoch > 0 and epoch % cfgs[0].save_videos_every == 0) or (
             epoch == cfgs[0].num_epochs - 1
         ):
             for iiidx, validator in enumerate(validators):
@@ -284,7 +309,7 @@ def main(cfgs: List[TrainConfig]):
 
 
 
-        if ( epoch % cfg.validate_every == 0) or (
+        if (epoch > 0 and epoch % cfg.validate_every == 0) or (
             epoch == cfg.num_epochs - 1
         ):
             for ind, validator in enumerate(validators):
@@ -339,7 +364,7 @@ def initialize_and_checkpoint_model(
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=747)
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=1122)
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
@@ -408,6 +433,13 @@ def init_model_from_unified_tracks(
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    #init_fg_motion_bases_from_single_t()
+    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
+        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
+    )
+
+    motion_bases = motion_bases.to(device)
+    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
     old_method = True
     if seq_name != 'dance':
       if old_method == True:
@@ -552,7 +584,7 @@ if __name__ == "__main__":
           )
           for i in range(4)
       ]
-    elif 'panoptic' in seq_name:
+    elif 'panoptic' in depth_type:
       cam_dict = {
         '1':3,
         '2':21,

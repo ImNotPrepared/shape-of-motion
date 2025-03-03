@@ -76,43 +76,24 @@ def init_fg_from_tracks_3d(
     """
     num_fg = tracks_3d.xyz.shape[0]
 
-    # Initialize gaussian colors.
+
     colors = torch.logit(tracks_3d.colors)
-    print('*-*'*50, colors.shape)
+
     feats = (tracks_3d.feats)
-    # Initialize gaussian scales: find the average of the three nearest
-    # neighbors in the first frame for each point and use that as the
-    # scale.
+
     dists, _ = knn(tracks_3d.xyz[:, cano_t], 3)
     dists = torch.from_numpy(dists)
     scales = dists.mean(dim=-1, keepdim=True)
     scales = scales.clamp(torch.quantile(scales, 0.05), torch.quantile(scales, 0.95))
     scales = torch.log(scales.repeat(1, 3))
-    # Initialize gaussian means.
+
     means = tracks_3d.xyz[:, cano_t]
-    # Initialize gaussian orientations as random.
+
     quats = torch.rand(num_fg, 4)
     # Initialize gaussian opacities.
+    # CHANGED IT TO 0.49 
+    # 
     opacities = torch.logit(torch.full((num_fg,), 0.7))
-    gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs)
-
-    '''
-    path='/data3/zihanwa3/Capstone-DSR/Processing/3D/filtered_person.npz'
-    new_pt_cld = np.load(path)["data"]
-    print('dyn_len', len(new_pt_cld))
-
-    print('-'*50 + 'Initializing Gaussians' + '-'*50)
-    path = #'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_duss_dec/1486/bg_pc.npz'
-    new_pt_cld = np.load(path)["data"]
-    params =  initialize_new_params(new_pt_cld)
-    means = params['means3D']
-    quats = params['unnorm_rotations']
-    scales = params['log_scales']
-    colors = params['rgb_colors']
-    opacities = params['logit_opacities']
-    '''
-
-
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
     return gaussians
@@ -151,7 +132,7 @@ def init_bg(
         F.normalize(local_normals.cross(points.normals), dim=-1)
         * (local_normals * points.normals).sum(-1, keepdim=True).acos_()
     ).roll(1, dims=-1)
-    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
+    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.49))
 
     init_w_pc = 2
     '''if init_w_pc:
@@ -213,8 +194,6 @@ def depthmap_to_camera_coordinates(depthmap, camera_intrinsics, pseudo_focal=Non
     camera_intrinsics = np.float32(camera_intrinsics)
     H, W = depthmap.shape
 
-    # Compute 3D ray associated with each pixel
-    # Strong assumption: there are no skew terms
     assert camera_intrinsics[0, 1] == 0.0
     assert camera_intrinsics[1, 0] == 0.0
     if pseudo_focal is None:
@@ -271,22 +250,17 @@ def init_fg_motion_bases_from_single_t(
     fg_depth_path: str = None, 
 
 ):
-    
-    ### xyz
     device = tracks_3d.xyz.device
     video_name = '_dance'
-
     num_frames = tracks_3d.xyz.shape[1]
     device = 'cuda'
-
     pose_matrices, intrinsics_matrices = get_data 
-    #fg_pc = np.load(f'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/{cano_t}/fg_pc.npz')
     all_fg_pc_feats = []  # List to collect features from all cameras
     all_fg_pc_xyz = []    # List to collect 3D point coordinates from all cameras
     all_fg_pc_clr = []    # List to collect colors from all cameras
 
     for cam_id in range(1, 5):
-        camera_intrinsics =intrinsics_matrices [cam_id - 1]
+        camera_intrinsics =intrinsics_matrices[cam_id - 1]
         camera_pose = pose_matrices[cam_id - 1]
         feat_path = org_path + f'undist_cam0{cam_id}/{cano_t:05d}.npy'
         fg_feat = np.load(feat_path)
@@ -305,33 +279,23 @@ def init_fg_motion_bases_from_single_t(
         fg_pc_clr = fg_image[valid_mask]
         fg_pc_feat = fg_feat[valid_mask]
         fg_pc_xyz = fg_pc_xyz[valid_mask]
-        
 
-        # Append the results to the lists
-        
         all_fg_pc_feats.append(fg_pc_feat)
         all_fg_pc_xyz.append(fg_pc_xyz)
         all_fg_pc_clr.append(fg_pc_clr)
 
-    # Concatenate all the features, point cloud coordinates, and colors along the new dimension
-    # Stack each feature array separately, ensuring consistency in shapes
     all_fg_pc_feats = np.vstack(all_fg_pc_feats)  # Vertically stack features to get [N1+N2+N3, :]
     all_fg_pc_xyz = np.vstack(all_fg_pc_xyz)      # Vertically stack 3D points to get [N1+N2+N3, :]
     all_fg_pc_clr = np.vstack(all_fg_pc_clr)      # Vertically stack colors to get [N1+N2+N3, :]
-    print(all_fg_pc_feats.shape, all_fg_pc_xyz.shape)
-    # Combine everything into a single tensor if needed
+
     combined_data = np.concatenate((all_fg_pc_xyz, all_fg_pc_clr, all_fg_pc_feats), axis=1)  # Shape: [N, 10]
-    #combined_data = torch.from_numpy(combined_data).cuda()
+
     feats = combined_data[:, 6:]
     new_pt_cld = combined_data[:, :6]
-        
-    #perfect_pc_path = f'{cano_t}'
-    #perfect_pc = np.load(perfect_pc_path)
-    means_cano = combined_data[:, :3]#tracks_3d.xyz[:, cano_t].clone()  # [num_gaussians, 3]
 
-    #scene_center = means_cano.median(dim=0).values
+    means_cano = combined_data[:, :3]
 
-    sampled_centers, num_bases, labels = sample_initial_bases_centers_without_tracks(
+    sampled_centers, num_bases, labels = sample_initial_bases_centers(
         cluster_init_method, cano_t, means_cano, feats, num_bases
     )
     ids, counts = labels.unique(return_counts=True)
@@ -415,7 +379,7 @@ def init_motion_params_with_procrustes(
     means_cano = means_cano[valid_mask]
 
     sampled_centers, num_bases, labels = sample_initial_bases_centers(
-        cluster_init_method, cano_t, tracks_3d, num_bases
+        cluster_init_method, cano_t, tracks_3d, num_bases, clustering_method='feat'
     )
 
     # assign each point to the label to compute the cluster weight
@@ -827,7 +791,7 @@ def sample_initial_bases_centers_without_tracks(
 
 
 def sample_initial_bases_centers(
-    mode: str, cano_t: int, tracks_3d: TrackObservations, num_bases: int
+    mode: str, cano_t: int, tracks_3d: TrackObservations, num_bases: int, clustering_method: str = 'feat'
 ):
     """
     :param mode: "farthest" | "hdbscan" | "kmeans"
@@ -841,7 +805,7 @@ def sample_initial_bases_centers(
     print(f"{xyz.shape=}") # [N, T, 3]
 
     # clustering_method = 'feat'
-    clustering_method = 'feat'
+    
 
     # num_bases
     if clustering_method == 'feat':

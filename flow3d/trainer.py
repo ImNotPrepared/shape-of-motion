@@ -501,7 +501,7 @@ class Trainer:
             1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
         )
 
-            loss += rgb_loss * 0 #self.losses_cfg.w_rgb
+            loss += rgb_loss * self.losses_cfg.w_rgb
 
             depth_masks = (
                 valid_masks[..., None]
@@ -661,17 +661,8 @@ class Trainer:
         target_confidences 8 torch.Size([4, 2017])
         target_track_depths 8 torch.Size([4, 2017])
         '''
- # List of (N, P) per batch
-
-        ### num_targets_per_frame: 4
         _tic = time.time()
-        # overall 4 8
-        # print('overall', len(batch), len((batch[0]["target_ts"])))
 
-
-
-
-        # (B, G, 3).
         means, quats = self.model.compute_poses_all(ts)  # (G, B, 3), (G, B, 4)
 
         means = means.transpose(0, 1)
@@ -875,6 +866,15 @@ class Trainer:
         depth_masks = (
             masks[..., None] if not self.model.has_bg else valid_masks[..., None]
         )
+
+
+        depths_valid_mask = (depths > 0).bool().unsqueeze(-1)
+        depth_masks = depth_masks.bool()
+        depth_masks = (depths_valid_mask & depth_masks).float()
+
+
+
+        
 
         pred_depth = cast(torch.Tensor, rendered_all["depth"])
         pred_disp = 1.0 / (pred_depth + 1e-5)
