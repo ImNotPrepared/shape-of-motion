@@ -57,10 +57,10 @@ class TrainConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 14_000
-    num_bg: int = 14_000
+    num_fg: int = 17_000
+    num_bg: int = 47_000
     num_motion_bases: int = 21
-    num_epochs: int = 500
+    num_epochs: int = 1
     port: int | None = None
     vis_debug: bool = False 
     batch_size: int = 8
@@ -68,7 +68,7 @@ class TrainConfig:
     validate_every: int = 100
     save_videos_every: int = 70
     ignore_cam_mask: int = 0
-    test_validator_every: int = 1
+    test_validator_every: int = 5
     test_w2cs: str = ''
     seq_name: str = ''
 
@@ -80,16 +80,16 @@ class TrainBikeConfig:
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
-    num_fg: int = 11_000
-    num_bg: int = 14_000
-    num_motion_bases: int = 27
-    num_epochs: int = 500
+    num_fg: int = 17_000
+    num_bg: int = 10_000
+    num_motion_bases: int = 28
+    num_epochs: int = 20
     port: int | None = None
     vis_debug: bool = False 
     batch_size: int = 8
     num_dl_workers: int = 4
-    validate_every: int = 100
-    save_videos_every: int = 70
+    validate_every: int = 150
+    save_videos_every: int = 150
     ignore_cam_mask: int = 0
     test_w2cs: str = ''
     seq_name: str = ''
@@ -134,6 +134,62 @@ def interpolate_cameras(c2w1, c2w2, alpha):
     c2w_interp[:3, 3] = t_interp
     
     interpolated_c2ws.append(c2w_interp)
+    
+    return interpolated_c2ws
+
+def noisy_camera(w2c):
+    """
+    Interpolates between two camera extrinsics using slerp and lerp.
+
+    Args:
+        c2w1 (np.ndarray): First camera-to-world matrix (4x4).
+        c2w2 (np.ndarray): Second camera-to-world matrix (4x4).
+        alphas (list or np.ndarray): List of interpolation factors between 0 and 1.
+
+    Returns:
+        list: List of interpolated camera-to-world matrices.
+    """
+    # Extract rotations and translations
+    R = w2c[:3, :3]
+    t = w2c[:3, 3]
+
+    # Define the maximum deviation in degrees and convert to radians
+    fixed_angle_rad = np.deg2rad(5)  # Convert 5 degrees to radians
+    noise_angles = np.array([fixed_angle_rad] * 3)
+    # Create rotation matrices around x, y, and z axes
+    Rx = np.array([
+        [1, 0, 0],
+        [0, np.cos(noise_angles[0]), -np.sin(noise_angles[0])],
+        [0, np.sin(noise_angles[0]),  np.cos(noise_angles[0])]
+    ])
+
+    Ry = np.array([
+        [ np.cos(noise_angles[1]), 0, np.sin(noise_angles[1])],
+        [0, 1, 0],
+        [-np.sin(noise_angles[1]), 0, np.cos(noise_angles[1])]
+    ])
+
+    Rz = np.array([
+        [np.cos(noise_angles[2]), -np.sin(noise_angles[2]), 0],
+        [np.sin(noise_angles[2]),  np.cos(noise_angles[2]), 0],
+        [0, 0, 1]
+    ])
+
+    # Combine the rotation matrices
+    R_noise = Rz @ Ry @ Rx
+
+    # Apply the rotation noise to the original rotation
+    R_new = R_noise @ R
+
+    # Construct the new w2c matrix with the noisy rotation and original translation
+    w2c_new = np.eye(4)
+    w2c_new[:3, :3] = R_new
+    w2c_new[:3, 3] = t
+
+    # Update w2c with the new matrix
+    w2c = w2c_new
+    interpolated_c2ws = []
+    interpolated_c2ws.append(w2c)
     
     return interpolated_c2ws
 
@@ -225,26 +281,72 @@ def main(cfgs: List[TrainConfig]):
         for i, (view, val_img_dataset) in enumerate(zip(train_video_views, val_img_datases))
     ]
     import json
-    # /data3/zihanwa3/Capstone-DSR/Processing_panoptic_tennis
     try: 
         md = json.load(open(cfg.test_w2cs, 'r'))
+        c2ws = []
+        for c in range(1, 6):
+          if c==5:
+              c=1
+          k, w2c =  md['k'][0][c], np.linalg.inv(md['w2c'][0][c])
+          c2ws.append(w2c)
+        all_interpolated_c2ws = []
+        all_interpolated_c2ws_ = []
+        for i in range(len(c2ws) - 1):
+            c2w1 = c2ws[i]
+            c2w2 = c2ws[i + 1]
+            interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
+            all_interpolated_c2ws.extend(interpolated)
+            all_interpolated_c2ws_.extend(noisy_camera(c2w1))
     except:
         md = json.load(open(cfg.test_w2cs.replace('raw_data/', 'Processing_'), 'r'))
+        c2ws = []
+        cam_ids = [3, 21, 23, 25]
+        for i, kv in enumerate(cam_ids):
+            if kv > 30:
+                k = 4
+            elif kv > 15:
+                k = 3
+            elif kv > 10:
+                k = 2
+            else:
+                k = 1
+
+            cam_ids[i] = kv - k 
+
+        intrinsics = [np.array(md['k'][0][i]) for i in cam_ids]
+        w2cs = [np.array(md['w2c'][0][i]) for i in cam_ids]
         
-    c2ws = []
-    for c in range(1, 6):
-      if c==5:
-          c=1
-      k, w2c =  md['k'][0][c], np.linalg.inv(md['w2c'][0][c])
-      c2ws.append(w2c)
+        c2ws = w2cs#.tolist()]
+        c2ws.append(c2ws[0])
+
+        c2wsp = []
+        cam_ids = [11, 12, 13, 14]
+        for i, kv in enumerate(cam_ids):
+            if kv > 30:
+                k = 4
+            elif kv > 15:
+                k = 3
+            elif kv > 10:
+                k = 2
+            else:
+                k = 1
+
+            cam_ids[i] = kv - k 
+
+        intrinsics = [np.array(md['k'][0][i]) for i in cam_ids]
+        w2cs = [np.array(md['w2c'][0][i]) for i in cam_ids]
+        
+        c2wsp = w2cs#.tolist()]
+        c2wsp.append(c2wsp[0])
 
 
-    all_interpolated_c2ws = []
-    for i in range(len(c2ws) - 1):
-        c2w1 = c2ws[i]
-        c2w2 = c2ws[i + 1]
-        interpolated = interpolate_cameras(c2w1, c2w2, alpha=0.5)
-        all_interpolated_c2ws.extend(interpolated)
+        all_interpolated_c2ws = []
+        all_interpolated_c2ws_ = []
+        for i in range(len(c2ws) - 1):
+            c2w1 = c2ws[i]
+            c2w2 = c2ws[i + 1]
+            all_interpolated_c2ws.extend(interpolate_cameras(c2wsp[i],c2wsp[i],0) )
+            all_interpolated_c2ws_.extend(noisy_camera(c2w1))
 
     #all_interpolated_c2ws = []
 
@@ -275,18 +377,16 @@ def main(cfgs: List[TrainConfig]):
             pbar.set_description(f"Loss: {loss:.6f}")
 
             
-        if (epoch % cfgs[0].save_videos_every == 0) or (
-            epoch == cfgs[0].num_epochs - 1
-        ):
+        if ((epoch+1) % cfgs[0].save_videos_every == 0):
             for iiidx, validator in enumerate(validators):
                 validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
                 validator.save_train_videos_images(epoch)
 
+            for iiidx, validator in enumerate(validators):
+                validator.save_train_videos_images(epoch)
+                validator.save_int_videos(epoch, all_interpolated_c2ws_[iiidx], '_S')
 
-
-        if ( epoch % cfg.validate_every == 0) or (
-            epoch == cfg.num_epochs - 1
-        ):
+        if ( (epoch+1) % cfg.validate_every == 0):
             for ind, validator in enumerate(validators):
               val_logs = validator.validate()
               metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
@@ -298,7 +398,7 @@ def main(cfgs: List[TrainConfig]):
     #####
     #
     #
-    validator.save_train_videos(cfgs[0].num_epochs)
+    # validator.save_train_videos(cfgs[0].num_epochs)
     for ind, validator in enumerate(validators):
       val_logs = validator.validate()
       metrics_str = "\n".join([f"{key}: {value}" for key, value in val_logs.items()])
@@ -339,7 +439,7 @@ def initialize_and_checkpoint_model(
         Ks_fuse.append(Ks)
         w2cs_fuse.append(w2cs)
 
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=747)
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs, num_iters=2)
 
     Ks_fuse = torch.cat(Ks_fuse, dim=0)  # Flatten [N, Ks] to [N * Ks]
     w2cs_fuse = torch.cat(w2cs_fuse, dim=0)  # Flatten w2cs similarly
@@ -376,7 +476,15 @@ def init_model_from_unified_tracks(
     feats_list = []
     tracks_3d = None
     # Loop over the datasets and collect data
-    for train_dataset in train_datasets:
+    for train_dataset in train_datasets[:2]:
+        tracks_3d, visibles, invisibles, confidences, colors, feats = train_dataset.get_tracks_3d(num_fg)
+        tracks_3d_list.append(tracks_3d)
+        visibles_list.append(visibles)
+        invisibles_list.append(invisibles)
+        confidences_list.append(confidences)
+        colors_list.append(colors)
+        feats_list.append(feats)
+    for train_dataset in train_datasets[:2]:
         tracks_3d, visibles, invisibles, confidences, colors, feats = train_dataset.get_tracks_3d(num_fg)
         tracks_3d_list.append(tracks_3d)
         visibles_list.append(visibles)
@@ -408,31 +516,16 @@ def init_model_from_unified_tracks(
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
     old_method = True
-    if seq_name != 'dance':
-      if old_method == True:
-        motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-            tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
-        )
 
-        motion_bases = motion_bases.to(device)
-        fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
-      else:
-        cano_t = 216 # int((1615-1477) / 3)
-        # /data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp_newgraph/1615/fg_proj_img_0.png
-        #if seq_name == 'dance':
-        #    cano_t = #/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/1528
-        org_path=f'/data3/zihanwa3/Capstone-DSR/Processing/dinov2features/resized_512_Aligned_fg_only/'
-        fg_depth_path='/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_bike_100_bs1/'
-        #'/data3/zihanwa3/Capstone-DSR/Appendix/dust3r/duster_depth_clean_dance_512_4_mons_cp/'
-        from flow3d.org_utils import get_preset_data, get_preset_dance
-        get_data = get_preset_data(512)
+    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
+        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
+    )
 
-        motion_bases, motion_coefs, fg_params = init_fg_motion_bases_from_single_t(tracks_3d, num_motion_bases, rot_type, cano_t,                                                             
-            get_data=get_data, org_path=org_path, fg_depth_path=fg_depth_path, )#, sampled_centers
-      ##### OUTPUT: MotionBases, fg_params
-    ## CAN BE REPLACED BY:
-    # init_fg_motion_bases_from_single_t
+    motion_bases = motion_bases.to(device)
+    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
+
 
     motion_coefs = motion_coefs#.float()
     fg_params = fg_params.to(device)
@@ -444,8 +537,7 @@ def init_model_from_unified_tracks(
         bg_colors_list = []
         bg_feats_list = []
 
-        for item, train_dataset in enumerate(train_datasets):
-            
+        for train_dataset in train_datasets:
             bg_points, bg_normals, bg_colors, bg_feats = train_dataset.get_bkgd_points(num_bg)
             bg_points_list.append(bg_points)
             bg_normals_list.append(bg_normals)
@@ -456,6 +548,14 @@ def init_model_from_unified_tracks(
         combined_bg_normals = torch.cat(bg_normals_list, dim=0)
         combined_bg_colors = torch.cat(bg_colors_list, dim=0)
         combined_bg_feats = torch.cat(bg_feats_list, dim=0)
+        densify=False
+        if densify:
+          N = 7  
+          noise_std = 0.01  
+          combined_bg_points = combined_bg_points.repeat(N, 1) + torch.randn_like(combined_bg_points).repeat(N, 1) * noise_std
+          combined_bg_normals = combined_bg_normals.repeat(N, 1)
+          combined_bg_colors = combined_bg_colors.repeat(N, 1)
+          combined_bg_feats = combined_bg_feats.repeat(N, 1)
 
         combined_bg_data = (
             combined_bg_points,
@@ -463,6 +563,7 @@ def init_model_from_unified_tracks(
             combined_bg_colors,
             combined_bg_feats,
         )
+
 
         bg_points = StaticObservations(*combined_bg_data)
         assert bg_points.check_sizes()
@@ -532,7 +633,7 @@ if __name__ == "__main__":
     
     print(work_dir)
     import tyro
-    if seq_name == 'dance':
+    if seq_name == 'olddance':
       configs = [
           TrainConfig(
               work_dir=work_dir,

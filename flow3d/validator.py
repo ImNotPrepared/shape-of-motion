@@ -149,8 +149,14 @@ class Validator:
         val_img_loader: DataLoader | None = None,
         val_kpt_loader: DataLoader | None = None,
         save_dir: str | None = None,
+        do_the_trick: float | None = None,
+        no_fg: bool=0
     ):
         self.model = model
+        if do_the_trick:
+           self.model.bg.params['scales'] = do_the_trick *  self.model.bg.params['scales']
+        #if no_fg:
+           
         self.device = device
         self.train_loader = train_loader
         self.val_img_loader = val_img_loader
@@ -630,7 +636,7 @@ class Validator:
         iio.mimwrite(
             osp.join(video_dir, "rgbs.mp4"),
             make_video_divisble((video.numpy() * 255).astype(np.uint8)),
-            fps=fps,
+            fps=30,
         )
         # depth video
         depth_video = torch.stack(
@@ -999,7 +1005,7 @@ class Validator:
 
 
     @torch.no_grad()
-    def save_int_videos(self, epoch: int, w2c, nnvs=''):
+    def save_int_videos(self, epoch: int, w2c, nnvs='', ego=False, Ks=None):
         if self.train_loader is None:
             return
         # Directories for videos
@@ -1036,6 +1042,9 @@ class Validator:
         ref_pred_depths = []
         masks = []
         depth_min, depth_max = 1e6, 0
+
+        
+
         for batch_idx, batch in enumerate(
             tqdm(self.train_loader, desc="Rendering video", leave=False)
         ):
@@ -1050,73 +1059,118 @@ class Validator:
             # (H, W, 3).
             img = batch["imgs"][0]
 
-            w2c = torch.tensor(w2c).float().to(img.device)
-            img_wh = img.shape[-2::-1]
-            rendered = self.model.render(
-                t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
-            )
-            combined_img = torch.cat([img, rendered["img"][0]], dim=1).cpu()
+            if ego: 
+                video = []
+                for batch_idx, (K, w2c_ego) in enumerate(zip(Ks, w2c)):
+                  w2c_ego = torch.tensor(w2c_ego).float().to(img.device)
+                  img_wh = (512, 512)#
+                  rendered = self.model.render(
+                      t, w2c_ego[None], K[None], img_wh, return_depth=True, return_mask=True
+                      )
+                  #print(torch.cat([img, rendered["img"][0]], dim=1).cpu().shape)
+                  combined_img =rendered["img"][0].cpu()#  torch.cat([img, rendered["img"][0]], dim=1).cpu()
+                  video.append(combined_img)                
+                  ref_pred_depth = rendered["depth"][0].cpu()
+                  ref_pred_depths.append(ref_pred_depth)
+                  depth_min = min(depth_min, ref_pred_depth.min().item())
+                  depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
+                  if rendered["mask"] is not None:
+                      masks.append(rendered["mask"][0].cpu().squeeze(-1))
 
-            video.append(combined_img)
-            feat = rendered["feat"][0]
-            pca_features = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
+                  image_path = osp.join(image_dir, f"frame_{batch_idx:04d}.png")
+                  iio.imwrite(
+                      image_path,
+                      (combined_img.numpy() * 255).astype(np.uint8)
+                  )
 
-            pca_features_norm = (pca_features - pca_features.min()) / (pca_features.max() - pca_features.min())
-            pca_features_norm = (pca_features_norm * 255).astype(np.uint8)
-            
-            # Reconstruct full image
-            full_pca_features = np.zeros((pca_features.shape[0], 3), dtype=np.uint8)
-            #if mask is not None:
-            #    full_pca_features[mask_flat] = pca_features_norm
-            #else:
-            full_pca_features = pca_features_norm
-            pca_features_image = full_pca_features.reshape(feat.shape[0], feat.shape[1], 3)
-            
-            video_dino.append(torch.from_numpy(pca_features_image))
+                  feat_path = osp.join(feat_dir, f"frame_{batch_idx:04d}.png")
 
-
-
-
-
-            ref_pred_depth = rendered["depth"][0].cpu()
-            ref_pred_depths.append(ref_pred_depth)
-            depth_min = min(depth_min, ref_pred_depth.min().item())
-            depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
-            if rendered["mask"] is not None:
-                masks.append(rendered["mask"][0].cpu().squeeze(-1))
-
-            # Save individual images
-            image_path = osp.join(image_dir, f"frame_{batch_idx:04d}.png")
-            iio.imwrite(
-                image_path,
-                (combined_img.numpy() * 255).astype(np.uint8)
-            )
-
-            feat_path = osp.join(feat_dir, f"frame_{batch_idx:04d}.png")
-            iio.imwrite(
-                feat_path,
-                (pca_features_image).astype(np.uint8)
-            )
-
-
-            # Save depth images
-            depth_colormap = apply_depth_colormap(
-                ref_pred_depth, near_plane=depth_min, far_plane=depth_max
-            )
-            depth_image_path = osp.join(image_dir, f"depth_{batch_idx:04d}.png")
-            iio.imwrite(
-                depth_image_path,
-                (depth_colormap.numpy() * 255).astype(np.uint8)
-            )
-
-            # Save mask images if available
-            if len(masks) > 0:
-                mask_image = masks[-1]
-                mask_image_path = osp.join(image_dir, f"mask_{batch_idx:04d}.png")
-                iio.imwrite(
-                    mask_image_path,
-                    (mask_image.numpy() * 255).astype(np.uint8)
+                  depth_colormap = apply_depth_colormap(
+                      ref_pred_depth, near_plane=depth_min, far_plane=depth_max
+                  )
+                  depth_image_path = osp.join(image_dir, f"depth_{batch_idx:04d}.png")
+                  iio.imwrite(
+                      depth_image_path,
+                      (depth_colormap.numpy() * 255).astype(np.uint8)
+                  )
+                video = torch.stack(video, dim=0)
+                iio.mimwrite(
+                    osp.join(video_dir, "rgbs.mp4"),
+                    make_video_divisble((video.numpy() * 255).astype(np.uint8)),
+                    fps=30,
                 )
+
+            
+            else:
+
+
+              w2c = torch.tensor(w2c).float().to(img.device)
+              img_wh = img.shape[-2::-1]
+              rendered = self.model.render(
+                  t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
+              )
+              combined_img = torch.cat([img, rendered["img"][0]], dim=1).cpu()
+
+              video.append(combined_img)
+              feat = rendered["feat"][0]
+              pca_features = self.feat_base.transform(feat.cpu().numpy().reshape(-1, 32))
+
+              pca_features_norm = (pca_features - pca_features.min()) / (pca_features.max() - pca_features.min())
+              pca_features_norm = (pca_features_norm * 255).astype(np.uint8)
+              
+              # Reconstruct full image
+              full_pca_features = np.zeros((pca_features.shape[0], 3), dtype=np.uint8)
+              #if mask is not None:
+              #    full_pca_features[mask_flat] = pca_features_norm
+              #else:
+              full_pca_features = pca_features_norm
+              pca_features_image = full_pca_features.reshape(feat.shape[0], feat.shape[1], 3)
+              
+              video_dino.append(torch.from_numpy(pca_features_image))
+
+
+
+
+
+              ref_pred_depth = rendered["depth"][0].cpu()
+              ref_pred_depths.append(ref_pred_depth)
+              depth_min = min(depth_min, ref_pred_depth.min().item())
+              depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
+              if rendered["mask"] is not None:
+                  masks.append(rendered["mask"][0].cpu().squeeze(-1))
+
+              # Save individual images
+              image_path = osp.join(image_dir, f"frame_{batch_idx:04d}.png")
+              iio.imwrite(
+                  image_path,
+                  (combined_img.numpy() * 255).astype(np.uint8)
+              )
+
+              feat_path = osp.join(feat_dir, f"frame_{batch_idx:04d}.png")
+              iio.imwrite(
+                  feat_path,
+                  (pca_features_image).astype(np.uint8)
+              )
+
+
+              # Save depth images
+              depth_colormap = apply_depth_colormap(
+                  ref_pred_depth, near_plane=depth_min, far_plane=depth_max
+              )
+              depth_image_path = osp.join(image_dir, f"depth_{batch_idx:04d}.png")
+              iio.imwrite(
+                  depth_image_path,
+                  (depth_colormap.numpy() * 255).astype(np.uint8)
+              )
+
+              # Save mask images if available
+              if len(masks) > 0:
+                  mask_image = masks[-1]
+                  mask_image_path = osp.join(image_dir, f"mask_{batch_idx:04d}.png")
+                  iio.imwrite(
+                      mask_image_path,
+                      (mask_image.numpy() * 255).astype(np.uint8)
+                  )
     @torch.no_grad()
     def save_nts_images(self, epoch: int):
         if self.train_loader is None:
@@ -1236,7 +1290,7 @@ class Validator:
 
 
     @torch.no_grad()
-    def save_int_videos(self, epoch: int, w2c, nnvs=''):
+    def save_int_videos_up(self, epoch: int, w2c, nnvs=''):
         if self.train_loader is None:
             return
         # Directories for videos

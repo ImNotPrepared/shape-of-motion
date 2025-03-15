@@ -93,7 +93,7 @@ def init_fg_from_tracks_3d(
     # Initialize gaussian opacities.
     # CHANGED IT TO 0.49 
     # 
-    opacities = torch.logit(torch.full((num_fg,), 0.7))
+    opacities = torch.logit(torch.full((num_fg,), 0.99))
     gaussians = GaussianParams(means, quats, scales, colors, opacities, motion_coefs, feats=feats)
 
     return gaussians
@@ -115,11 +115,15 @@ def init_bg(
     bg_scene_scale = torch.max(bg_max_scale - bg_min_scale).item() / 2.0
 
 
+    bg_max_scale = bg_points_centered.quantile(0.93, dim=0)
+    bg_scene_scale = torch.mean(bg_max_scale).item()
+
+
     bkdg_colors = torch.logit(points.colors)
     bkdg_feats = (points.feats)
     dists, _ = knn(points.xyz, 3)
     dists = torch.from_numpy(dists)
-    bg_scales = dists.mean(dim=-1, keepdim=True)
+    bg_scales = dists.mean(dim=-1, keepdim=True).clip(0, bg_scene_scale)
     bkdg_scales = torch.log(bg_scales.repeat(1, 3))
 
     bg_means = points.xyz
@@ -132,7 +136,7 @@ def init_bg(
         F.normalize(local_normals.cross(points.normals), dim=-1)
         * (local_normals * points.normals).sum(-1, keepdim=True).acos_()
     ).roll(1, dims=-1)
-    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.49))
+    bg_opacities = torch.logit(torch.full((num_init_bg_gaussians,), 0.7))
 
     init_w_pc = 2
     '''if init_w_pc:

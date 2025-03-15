@@ -212,6 +212,7 @@ def main(cfgs: List[TrainConfig]):
         port=cfgs[0].port,
     )
 
+    trainer.model.fg.params['opacities'] =  torch.logit(trainer.model.fg.params['opacities'] -  trainer.model.fg.params['opacities'])
     validators = [
         Validator(
             model=trainer.model,
@@ -221,7 +222,8 @@ def main(cfgs: List[TrainConfig]):
                 DataLoader(val_img_dataset, batch_size=110) 
             ),
             save_dir=os.path.join(cfgs[0].work_dir, f'cam_{i+1}'),
-            do_the_trick=0.97
+            do_the_trick=0.97, 
+            no_fg=True
         )
         for i, (view, val_img_dataset) in enumerate(zip(train_video_views, val_img_datases))
     ]
@@ -325,6 +327,8 @@ def main(cfgs: List[TrainConfig]):
         c2ws = w2cs#.tolist()]
         c2ws.append(c2ws[0])
         
+
+
         all_interpolated_c2ws = []
         all_interpolated_c2ws_ = []
         for i in range(len(c2ws) - 1):
@@ -335,12 +339,19 @@ def main(cfgs: List[TrainConfig]):
             all_interpolated_c2ws_.extend(noisy_camera(c2w1))
 
 
+    ### ego begin
+    md = json.load(open('/data3/zihanwa3/Capstone-DSR/Dynamic3DGaussians/data_ego/cmu_bike/Dy_train_meta_egoview.json', 'r'))
+
+    Ks, w2c =  np.array(md['k']), np.array(md['w2c'])
+    all_interpolated_c2ws = np.linalg.inv(w2c)
+
     guru.info(f"Starting training from {trainer.global_step=}")
     
     epoch = trainer.global_step
-    for iiidx, validator in enumerate(validators):
-        validator.save_train_videos_images(epoch)
-        validator.save_int_videos(epoch, all_interpolated_c2ws[iiidx])
+    all_interpolated_c2ws = torch.tensor(all_interpolated_c2ws).float().cuda()
+    Ks = torch.tensor(Ks).float().cuda()
+    print(Ks.shape, all_interpolated_c2ws.shape)
+    validators[0].save_int_videos(epoch, all_interpolated_c2ws, ego=True, Ks=Ks)
 
     '''import collections
 

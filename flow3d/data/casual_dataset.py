@@ -69,7 +69,7 @@ class CustomDataConfig:
     depth_type: str = "modest"
     camera_type: Literal["droid_recon"] = "droid_recon"
     track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir"
-    mask_erosion_radius: int = 1
+    mask_erosion_radius: int = 3
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
@@ -167,7 +167,7 @@ class CasualDataset(BaseDataset):
           self.frame_names = frame_names[start:end:self.glb_step][:-1]
         elif self.video_name=='_dance':
           self.frame_names = frame_names[start:end:self.glb_step]#[:-1]
-        elif self.video_name=='' or 'soccer' in self.video_name:
+        elif self.video_name=='' or 'soccer' in self.video_name or 'bike' in self.video_name or 'dance' in self.video_name:
           self.frame_names = frame_names[start:end:self.glb_step][:-1]
         else:
           self.frame_names = frame_names[start:end:self.glb_step]
@@ -409,7 +409,8 @@ class CasualDataset(BaseDataset):
               except:
                 w2cs, Ks, tstamps = load_known_cameras_panoptic(
                 path, H, W, noise=False ##############################FUKKKING DOG
-                )          
+                )     
+
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
         assert (
@@ -591,7 +592,12 @@ class CasualDataset(BaseDataset):
         # Ensure fg_masks is also a boolean tensor
         fg_masks = (masks == 1).float()
         fg_masks = fg_masks.bool()
-        final_masks = (fg_masks | depths_valid_mask).float()
+        final_masks = (fg_masks & depths_valid_mask).numpy()#.float()
+        r = 2
+        final_masks = cv2.erode(
+            final_masks.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
+        final_masks = torch.from_numpy(final_masks).float()
 
         num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
 
@@ -755,6 +761,8 @@ class CasualDataset(BaseDataset):
            depth = self.load_modest_depth(index)
         elif self.depth_type == 'moge':
            depth = self.load_moge_depth(index)
+        elif self.depth_type == 'algo':
+           depth = self.load_algo_depth(index)
         elif self.depth_type == 'da2':
            depth = self.load_org_depth(index)
         elif self.depth_type == 'dust3r':
@@ -788,6 +796,7 @@ class CasualDataset(BaseDataset):
         else:
           seq = self.video_name.split('_')[-1]
           new_path = f'/data3/zihanwa3/Capstone-DSR/Processing_panoptic_{seq}/jono_depth/'
+          # f'/data3/zihanwa3/Capstone-DSR/monst3r_train/my_data_2/Dynamic3DGaussians/visuals_{seq}/full/visuals/params.npz/gt_depth/conf_bg_depth_9.jpg'
           
           path = path.replace('toy_512_', 'undist_cam')
           cheaty_way = path.split('/')[-2]
@@ -795,6 +804,7 @@ class CasualDataset(BaseDataset):
           cam_id = cheaty_way.split('cam')[-1]
           path = path.replace(f'softball_undist_cam03', '')
           #print(self.frame_names[index], 'frame_names')
+          
           if int(cam_id) == 3:
             cam_id = 2
           else:
@@ -802,6 +812,7 @@ class CasualDataset(BaseDataset):
 
 
           new_path  = os.path.join(new_path, str(int(self.frame_names[index])), f'conf_bg_depth_{cam_id}.npy')
+          print(new_path)
           path = new_path
 
           #path = '/data3/zihanwa3/Capstone-DSR/Processing_panoptic_tennis/jono_depth'
@@ -816,8 +827,8 @@ class CasualDataset(BaseDataset):
         # jono_depth/0/conf_bg_depth_0.npy ### t/cam
 
         depth_map = np.load(path)
-        depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
-        depth = torch.from_numpy(depth_map).float()
+        depth_map = np.clip(depth_map, a_min=0.1, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float() # * 1.1
         input_tensor = depth.unsqueeze(0).unsqueeze(0) 
 
         # If you want to remove the added dimensions
@@ -891,6 +902,28 @@ class CasualDataset(BaseDataset):
         # If you want to remove the added dimensions
         depth = input_tensor.squeeze(0).squeeze(0) 
         return depth
+
+    def load_algo_depth(self, index) -> torch.Tensor:
+        path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
+        #print(self.depth_dir, path, int(self.frame_names[index]))
+        to_replace = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/data/aligned_depth_anything//'
+
+        new_path = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/_aligned_preset_k_new_clean_algo_'
+        path = path.replace('toy_512_', 'undist_cam')
+    
+        path = path.replace(to_replace, new_path)
+        path = path.replace('disp', 'frame')
+        path = path.replace(self.tgt_name+'_', self.tgt_name+'/')
+        depth_map = np.load(path)
+        # depth_map = np.clip(depth_map, a_min=1e-8, a_max=1e6)
+        depth = torch.from_numpy(depth_map).float()
+        input_tensor = depth.unsqueeze(0).unsqueeze(0) 
+
+        # If you want to remove the added dimensions
+        depth = input_tensor.squeeze(0).squeeze(0) 
+        return depth
+
+
 
     def load_modest_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/disp_{int(self.frame_names[index])}.npy"
@@ -1556,83 +1589,103 @@ class StatDataset(Dataset):
 
         bg_geometry = []
         print(f"{query_idcs=}")
-        for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
+
+
+        old_method=True
+        if old_method:
+          for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
+              img = self.get_image(query_idx)
+              feat = self.get_feat(query_idx)
+              depth = self.get_depth(query_idx)
+              bg_mask = self.get_mask(query_idx) < 0
+              bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
+
+              w2c = self.w2cs[query_idx]
+              K = self.Ks[query_idx]
+
+              # get the bounding box of previous points that reproject into frame
+              # inefficient but works for now
+              bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
+              for p3d, _, _, _ in bg_geometry:
+                  if len(p3d) < 1:
+                      continue
+                  # reproject into current frame
+                  p2d = torch.einsum(
+                      "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
+                  )
+                  p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
+                  xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
+                  ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
+
+                  bmin_x = min(bmin_x, int(xmin))
+                  bmin_y = min(bmin_y, int(ymin))
+                  bmax_x = max(bmax_x, int(xmax))
+                  bmax_y = max(bmax_y, int(ymax))
+
+              # don't include points that are covered by previous points
+              bmin_x = max(0, bmin_x)
+              bmin_y = max(0, bmin_y)
+              bmax_x = min(W, bmax_x)
+              bmax_y = min(H, bmax_y)
+              overlap_mask = torch.ones_like(bool_mask)
+              overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
+
+              bool_mask &= overlap_mask
+              if bool_mask.sum() < min_per_frame:
+                  guru.debug(f"skipping {query_idx=}")
+                  continue
+
+              points = (
+                  torch.einsum(
+                      "ij,pj->pi",
+                      torch.linalg.inv(K),
+                      F.pad(grid[bool_mask], (0, 1), value=1.0),
+                  )
+                  * depth[bool_mask][:, None]
+              )
+              points = torch.einsum(
+                  "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
+              )
+              point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
+              point_colors = img[bool_mask]
+              point_feats = feat[bool_mask]
+
+              num_sel = max(len(points) // down_rate, min_per_frame)
+              sel_idcs = np.random.choice(len(points), num_sel, replace=False)
+              points = points[sel_idcs]
+              point_normals = point_normals[sel_idcs]
+              point_colors = point_colors[sel_idcs]
+              point_feats = point_feats[sel_idcs]
+              guru.debug(f"{query_idx=} {points.shape=}")
+              bg_geometry.append((points, point_normals, point_colors, point_feats))
+
+          bg_points, bg_normals, bg_colors, bg_feats = map(
+              partial(torch.cat, dim=0), zip(*bg_geometry)
+          )
+          print(bg_points, bg_normals, bg_colors, bg_feats, 'wwwwtf')
+          if len(bg_points) > num_samples:
+              sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
+              bg_points = bg_points[sel_idcs]
+              bg_normals = bg_normals[sel_idcs]
+              bg_colors = bg_colors[sel_idcs]
+              bg_feats = bg_feats[sel_idcs]
+        else:
+          for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
             feat = self.get_feat(query_idx)
             depth = self.get_depth(query_idx)
             bg_mask = self.get_mask(query_idx) < 0
             bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
 
-            w2c = self.w2cs[query_idx]
-            K = self.Ks[query_idx]
-
-            # get the bounding box of previous points that reproject into frame
-            # inefficient but works for now
-            bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
-            for p3d, _, _, _ in bg_geometry:
-                if len(p3d) < 1:
-                    continue
-                # reproject into current frame
-                p2d = torch.einsum(
-                    "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
-                )
-                p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
-                xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
-                ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
-
-                bmin_x = min(bmin_x, int(xmin))
-                bmin_y = min(bmin_y, int(ymin))
-                bmax_x = max(bmax_x, int(xmax))
-                bmax_y = max(bmax_y, int(ymax))
-
-            # don't include points that are covered by previous points
-            bmin_x = max(0, bmin_x)
-            bmin_y = max(0, bmin_y)
-            bmax_x = min(W, bmax_x)
-            bmax_y = min(H, bmax_y)
-            overlap_mask = torch.ones_like(bool_mask)
-            overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
-
-            bool_mask &= overlap_mask
-            if bool_mask.sum() < min_per_frame:
-                guru.debug(f"skipping {query_idx=}")
-                continue
-
-            points = (
-                torch.einsum(
-                    "ij,pj->pi",
-                    torch.linalg.inv(K),
-                    F.pad(grid[bool_mask], (0, 1), value=1.0),
-                )
-                * depth[bool_mask][:, None]
-            )
             points = torch.einsum(
-                "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
+              "ij,pj->pi", torch.linalg.inv(w2c)[:3], F.pad(points, (0, 1), value=1.0)
             )
-            point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
-            point_colors = img[bool_mask]
-            point_feats = feat[bool_mask]
-
-            num_sel = max(len(points) // down_rate, min_per_frame)
-            sel_idcs = np.random.choice(len(points), num_sel, replace=False)
-            points = points[sel_idcs]
-            point_normals = point_normals[sel_idcs]
-            point_colors = point_colors[sel_idcs]
-            point_feats = point_feats[sel_idcs]
-            guru.debug(f"{query_idx=} {points.shape=}")
-            bg_geometry.append((points, point_normals, point_colors, point_feats))
-
-        bg_points, bg_normals, bg_colors, bg_feats = map(
-            partial(torch.cat, dim=0), zip(*bg_geometry)
-        )
-        print(bg_points, bg_normals, bg_colors, bg_feats, 'wwwwtf')
-        if len(bg_points) > num_samples:
-            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
-            bg_points = bg_points[sel_idcs]
-            bg_normals = bg_normals[sel_idcs]
-            bg_colors = bg_colors[sel_idcs]
-            bg_feats = bg_feats[sel_idcs]
-
+            points = points#[sel_idcs]
+            point_normals = point_normals#[sel_idcs]
+            point_colors = point_colors#[sel_idcs]
+            point_feats = point_feats# [sel_idcs]
+          guru.debug(f"{query_idx=} {points.shape=}")
+          bg_geometry.append((points, point_normals, point_colors, point_feats))
         return bg_points, bg_normals, bg_colors, bg_feats
 
 

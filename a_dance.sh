@@ -11,7 +11,7 @@ EXP=$1
 
 # _nus_cpr_08_1
 # _cmu_bike_74_7
-# _mit_dance_2_12
+# _mit_dance_02_12
 
 ###  modest , 
 
@@ -22,4 +22,4 @@ EXP=$1
 ### 
 
 
-python dance_glb.py --seq_name '_cmu_soccer_07_3' --depth_type 'moge' --exp "$EXP"
+python dance_glb.py --seq_name '_mit_dance_02_12' --depth_type 'moge' --exp "$EXP"

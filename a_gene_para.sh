@@ -5,12 +5,12 @@ sequences=(
   "_iiith_cooking_123_2"
   "_nus_cpr_08_1"
   "_cmu_soccer_07_3"
-  "_uniandes_ball_002_17"
+  # "_uniandes_ball_002_17"
   "_indiana_piano_14_4"
 )
 
 # Explicit GPU ID list
-gpu_ids=(2 3 4 7 6)
+gpu_ids=(2 3 4 6)
 
 # Number of available GPUs
 num_gpus=${#gpu_ids[@]}

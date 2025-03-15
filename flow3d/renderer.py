@@ -105,8 +105,28 @@ class Renderer:
 
 
         do_my_trick=True
+        print(path)
+        model_fg=None
         if do_my_trick:
-           model.bg.params['scales'] = 0.97 * model.bg.params['scales']
+           print('did the')
+           if 'piano' in path:
+            fg_path = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/results_indiana_piano_14_4/_init_opt_63'
+            fg_path = f"{fg_path}/checkpoints/last.ckpt"
+            ckpt_fg = torch.load(fg_path)["model"]
+            model_fg = SceneModel.init_from_state_dict(ckpt_fg)
+            model_fg = model_fg.to(device) 
+           elif 'cprrrr' in path:   
+            fg_path = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/results_nus_cpr_08_1/_init2'
+            fg_path = f"{fg_path}/checkpoints/last.ckpt"
+            ckpt_fg = torch.load(fg_path)["model"]
+            model_fg = SceneModel.init_from_state_dict(ckpt_fg)
+            model_fg = model_fg.to(device) 
+           if model_fg is None:
+            model.bg = model.bg 
+           else:
+            model.bg = model_fg.bg#.params
+           model.fg.params['opacities'] =  torch.logit(model.fg.params['opacities'] -  model.fg.params['opacities'])
+           model.bg.params['scales'] =  1.07 * model.bg.params['scales']
 
 
         '''
@@ -191,7 +211,7 @@ class Renderer:
             else None
         )
 
-        self.seq_name='see_moge'
+        self.seq_name='av'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
@@ -206,17 +226,17 @@ class Renderer:
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_basketball/combined_pointcloud_{3*t+210}.npy'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_cooking/combined_pointcloud_{3*t+9000}.npy'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_music/combined_pointcloud_{3*t+2820}.npy'
-          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_cpr/combined_pointcloud_{3*t+720}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_cpr/combined_pointcloud_{3*t+720}.npy'
 
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_cmu_soccer_07_3/dust_depth/{3*t+10050}/pc.npz'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_uniandes_ball_002_17/dust_depth/{3*t+437}/pc.npz'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing_indiana_music_14_4/dust_depth/{3*t+1621}/pc.npz'
 
-          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_piano/combined_pointcloud_{3*t+1621}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_piano/combined_pointcloud_{3*t+1621}.npy'
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
-          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_ball/combined_pointcloud_{3*t+437}.npy'
+          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_ball/combined_pointcloud_{3*t+437}.npy'
 
-          # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_soccer/combined_pointcloud_{3*t+10070}.npy'
+          pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_soccer/combined_pointcloud_{3*t+10070}.npy'
 
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
           pc = np.load(pc_dir)# ['data']

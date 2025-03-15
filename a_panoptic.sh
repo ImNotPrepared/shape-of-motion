@@ -11,7 +11,7 @@ EXP=$1
 
 # _nus_cpr_08_1
 # _cmu_bike_74_7
-# _mit_dance_2_12
+# _dance_mit_2_12
 
 ###  modest , 
 
@@ -19,7 +19,7 @@ EXP=$1
 ### _uniandes_ball_002_17
 ### _indiana_piano_14_4
 ### _panoptic_softball
-### 
+### _panoptic_tennis
 
 
-python dance_glb.py --seq_name '_cmu_soccer_07_3' --depth_type 'moge' --exp "$EXP"
+python dance_glb.py --seq_name '_panoptic_softball' --depth_type 'panoptic_gt' --exp "$EXP"
