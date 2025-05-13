@@ -162,6 +162,10 @@ def get_tracks_3d_for_query_frame(
         padding_mode="border",
     )[0, :, 0].T
 
+
+
+
+
     if query_feat is None:
       return (
           tracks_3d[:, valid].swapdims(0, 1),

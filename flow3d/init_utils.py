@@ -101,7 +101,7 @@ def init_fg_from_tracks_3d(
 
 def init_bg(
     points: StaticObservations,
-    seq_name: str
+    seq_name: str | None = None 
 ) -> GaussianParams:
     """
     using dataclasses instead of individual tensors so we know they're consistent
@@ -124,6 +124,17 @@ def init_bg(
     dists, _ = knn(points.xyz, 3)
     dists = torch.from_numpy(dists)
     bg_scales = dists.mean(dim=-1, keepdim=True).clip(0, bg_scene_scale)
+    bg_scales = torch.full_like(bg_scales, bg_scales.median())
+
+    # Option 2: modify in-place
+    bg_scales.fill_(bg_scales.median())
+
+    print(bg_scales.shape)
+    bg_scales =  points.sizes[..., None]
+    print(bg_scales.shape)
+
+
+
     bkdg_scales = torch.log(bg_scales.repeat(1, 3))
 
     bg_means = points.xyz

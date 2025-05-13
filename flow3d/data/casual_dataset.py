@@ -507,7 +507,7 @@ class CasualDataset(BaseDataset):
             # get the bounding box of previous points that reproject into frame
             # inefficient but works for now
             bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
-            for p3d, _, _, _ in bg_geometry:
+            for p3d, _, _, _, _ in bg_geometry:
                 if len(p3d) < 1:
                     continue
                 # reproject into current frame
@@ -550,6 +550,8 @@ class CasualDataset(BaseDataset):
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
             point_feats = feat[bool_mask]
+            point_sizes = depth[bool_mask] / ((K[0][0] + K[0][1])/2)
+
 
             num_sel = max(len(points) // down_rate, min_per_frame)
             sel_idcs = np.random.choice(len(points), num_sel, replace=False)
@@ -557,10 +559,13 @@ class CasualDataset(BaseDataset):
             point_normals = point_normals[sel_idcs]
             point_colors = point_colors[sel_idcs]
             point_feats = point_feats[sel_idcs]
-            guru.debug(f"{query_idx=} {points.shape=}")
-            bg_geometry.append((points, point_normals, point_colors, point_feats))
+            point_sizes = point_sizes[sel_idcs]
 
-        bg_points, bg_normals, bg_colors, bg_feats = map(
+            
+            guru.debug(f"{query_idx=} {points.shape=}")
+            bg_geometry.append((points, point_normals, point_colors, point_feats, point_sizes))
+
+        bg_points, bg_normals, bg_colors, bg_feats, bg_sizes = map(
             partial(torch.cat, dim=0), zip(*bg_geometry)
         )
         if len(bg_points) > num_samples:
@@ -569,8 +574,9 @@ class CasualDataset(BaseDataset):
             bg_normals = bg_normals[sel_idcs]
             bg_colors = bg_colors[sel_idcs]
             bg_feats = bg_feats[sel_idcs]
+            bg_sizes = bg_sizes[sel_idcs]
 
-        return bg_points, bg_normals, bg_colors, bg_feats
+        return bg_points, bg_normals, bg_colors, bg_feats, bg_sizes
 
     def get_tracks_3d(
         self, num_samples: int, start: int = 0, end: int = -1, step: int = 1, **kwargs
@@ -1299,6 +1305,8 @@ class EgoDataset(Dataset):
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
             point_feats = feat[bool_mask]
+            point_sizes = depth[bool_mask] / ((K[0][0] + K[0][1])/2)
+
 
             num_sel = max(len(points) // down_rate, min_per_frame)
             sel_idcs = np.random.choice(len(points), num_sel, replace=False)
@@ -1306,10 +1314,11 @@ class EgoDataset(Dataset):
             point_normals = point_normals[sel_idcs]
             point_colors = point_colors[sel_idcs]
             point_feats = point_feats[sel_idcs]
+            point_sizes = point_sizes[sel_idcs]
             guru.debug(f"{query_idx=} {points.shape=}")
-            bg_geometry.append((points, point_normals, point_colors, point_feats))
+            bg_geometry.append((points, point_normals, point_colors, point_feats, point_sizes))
 
-        bg_points, bg_normals, bg_colors, bg_feats = map(
+        bg_points, bg_normals, bg_colors, bg_feats, bg_sizes = map(
             partial(torch.cat, dim=0), zip(*bg_geometry)
         )
         if len(bg_points) > num_samples:
@@ -1318,8 +1327,10 @@ class EgoDataset(Dataset):
             bg_normals = bg_normals[sel_idcs]
             bg_colors = bg_colors[sel_idcs]
             bg_feats = bg_feats[sel_idcs]
+            bg_sizes = bg_sizes[sel_idcs]
 
-        return bg_points, bg_normals, bg_colors, bg_feats
+
+        return bg_points, bg_normals, bg_colors, bg_feats, bg_sizes
 
     def load_cam(self, c):
         """Load camera parameters for a given index."""

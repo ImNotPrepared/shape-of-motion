@@ -115,18 +115,18 @@ class Renderer:
             ckpt_fg = torch.load(fg_path)["model"]
             model_fg = SceneModel.init_from_state_dict(ckpt_fg)
             model_fg = model_fg.to(device) 
-           elif 'cprrrr' in path:   
+           elif 'cpr' in path:   
             fg_path = '/data3/zihanwa3/Capstone-DSR/shape-of-motion/results_nus_cpr_08_1/_init2'
             fg_path = f"{fg_path}/checkpoints/last.ckpt"
             ckpt_fg = torch.load(fg_path)["model"]
             model_fg = SceneModel.init_from_state_dict(ckpt_fg)
-            model_fg = model_fg.to(device) 
+            model_fg = model_fg.to(device)
            if model_fg is None:
             model.bg = model.bg 
            else:
             model.bg = model_fg.bg#.params
-           model.fg.params['opacities'] =  torch.logit(model.fg.params['opacities'] -  model.fg.params['opacities'])
-           model.bg.params['scales'] =  1.07 * model.bg.params['scales']
+           model.fg.params['opacities'] =  (model.fg.params['opacities']) # torch.logit(model.fg.params['opacities'] -  model.fg.params['opacities'])
+           model.bg.params['scales'] =  0.94 * model.bg.params['scales']
 
 
         '''
@@ -211,7 +211,7 @@ class Renderer:
             else None
         )
 
-        self.seq_name='av'
+        self.seq_name='see_moge'
         if self.seq_name == 'bike':
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Processing/duster_depth_new_2.7/{t+183}/pc.npz'
           pc = np.load(pc_dir)["data"]
@@ -237,7 +237,7 @@ class Renderer:
           # pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_ball/combined_pointcloud_{3*t+437}.npy'
 
           pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_soccer/combined_pointcloud_{3*t+10070}.npy'
-
+          # /data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_algo_soccer/combined_pointcloud_10070.npy
           #pc_dir = f'/data3/zihanwa3/Capstone-DSR/Appendix/MoGe/combined_pointclouds_test_new_softball/combined_pointcloud_{3*t}.npy'
           pc = np.load(pc_dir)# ['data']
         elif self.seq_name == 'single_person':

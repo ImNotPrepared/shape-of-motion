@@ -21,12 +21,7 @@ class GaussianParams(nn.Module):
         feats: torch.Tensor | None = None,
     ):
         super().__init__()
-        if not check_gaussian_sizes(
-            means, quats, scales, colors, opacities, motion_coefs
-        ):
-            import ipdb
 
-            ipdb.set_trace()
         params_dict = {
             "means": nn.Parameter(means),
             "quats": nn.Parameter(quats),
